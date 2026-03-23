@@ -44,47 +44,7 @@ def subir_excel_a_sheets(ruta_excel):
 # ────────────────────────────────────────────────
 #           NUEVAS FUNCIONES - PROGRAMACIÓN MENSUAL
 # ────────────────────────────────────────────────
-
-@st.cache_resource
-def get_spreadsheet():
-    """
-    Devuelve el objeto Spreadsheet completo (necesario para crear hojas nuevas)
-    """
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=SCOPES
-    )
-    client = gspread.authorize(creds)
-    sheet_id = st.secrets["sheets"]["spreadsheet_id"]
-    return client.open_by_key(sheet_id)
-
-
-def existe_programacion(periodo_key: str) -> bool:
-    """
-    Verifica si ya existe una hoja para este período.
-    Ej: periodo_key = "MARZO_2026" → busca "Prog_MARZO_2026"
-    Retorna True si la hoja ya existe (no se puede subir duplicado)
-    """
-    nombre_hoja = f"Prog_{periodo_key.upper()}"
-    spreadsheet = get_spreadsheet()
-    try:
-        spreadsheet.worksheet(nombre_hoja)
-        return True
-    except gspread.exceptions.WorksheetNotFound:
-        return False
-
-
 def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, anio: int):
-    """
-    Crea una hoja nueva automáticamente si no existe y guarda los datos del DataFrame.
-    
-    - Agrega título similar al de tu Excel de ejemplo
-    - Escribe encabezados y datos
-    - Retorna el nombre de la hoja creada
-    
-    Uso recomendado:
-    nombre_hoja = crear_y_guardar_programacion(df, "MARZO_2026", "Marzo", 2026)
-    """
     nombre_hoja = f"Prog_{periodo_key.upper()}"
     
     if existe_programacion(periodo_key):
@@ -92,37 +52,32 @@ def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, a
     
     spreadsheet = get_spreadsheet()
     
-    # Crear hoja nueva con dimensiones razonables
     nueva_hoja = spreadsheet.add_worksheet(
         title=nombre_hoja,
-        rows=700,               # suficiente para 380+ dptos + totales + encabezados
+        rows=700,
         cols=max(40, len(df.columns) + 10)
     )
     
-    # Título principal (similar a tu Excel)
+    # Título
     titulo = f"DETERMINACION DE CUOTA MES DE {mes.upper()}-{anio} - CONJUNTO RESIDENCIAL GOLF LOS ANDES I"
-    nueva_hoja.update("A1", titulo)
+    nueva_hoja.update("A1", [[titulo]])  # ← importante: [[ ]] para 2D
     nueva_hoja.format("A1", {
         "textFormat": {"bold": True, "fontSize": 14},
         "horizontalAlignment": "CENTER"
     })
-    # Merge para que se vea bien (ajusta el rango según cuántas columnas uses)
-    nueva_hoja.merge_cells("A1:AG1")  # AG ≈ columna 33, ajusta si necesitas más
+    nueva_hoja.merge_cells("A1:AG1")  # ajusta AG si necesitas
     
-    # Fila 2 vacía (como en tu ejemplo)
-    nueva_hoja.update("A2", "")
+    nueva_hoja.update("A2", [[""]])  # fila vacía
     
-    # Encabezados en fila 3
+    # Encabezados (fila 3)
     encabezados = df.columns.tolist()
-    nueva_hoja.update("A3", [encabezados])
-    nueva_hoja.format("A3:AG3", {"textFormat": {"bold": True}})
+    nueva_hoja.update("A3", [encabezados])  # ← [lista] = lista de listas con 1 fila
     
-    # Datos desde fila 4
-    datos = df.fillna("").values.tolist()  # evita NaN que rompen gspread
+    # Datos (desde fila 4)
+    datos = df.fillna("").values.tolist()   # ya es lista de listas
     if datos:
-        nueva_hoja.update("A4", datos)
+        nueva_hoja.update("A4", datos)      # ← ya es 2D, OK directo
     
-    # Limpiar caché para que futuras lecturas vean los cambios
     st.cache_resource.clear()
     
     return nombre_hoja
