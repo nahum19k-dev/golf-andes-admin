@@ -158,38 +158,61 @@ with tab2:
             }
             df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
+            # Agregar columnas faltantes
             if 'DNI' not in df_viz.columns:
                 df_viz['DNI'] = ""
             if 'SITUACIÓN' not in df_viz.columns:
                 df_viz['SITUACIÓN'] = "PROPIETARIO"
 
-            # Filtro por fecha
+            # Convertir fechas a datetime para filtrar
             if 'FECHA' in df_viz.columns:
                 df_viz['FECHA'] = pd.to_datetime(df_viz['FECHA'], errors='coerce')
-                if not df_viz['FECHA'].isna().all():
-                    col_fecha, col_fecha2 = st.columns(2)
-                    with col_fecha:
-                        fecha_min = st.date_input("Desde", value=df_viz['FECHA'].min().date())
-                    with col_fecha2:
-                        fecha_max = st.date_input("Hasta", value=df_viz['FECHA'].max().date())
-                    mask = (df_viz['FECHA'].dt.date >= fecha_min) & (df_viz['FECHA'].dt.date <= fecha_max)
-                    df_filtrado = df_viz[mask]
-                else:
-                    df_filtrado = df_viz
+
+            # Filtro por rango de fechas
+            if 'FECHA' in df_viz.columns and not df_viz['FECHA'].isna().all():
+                col_fecha, col_fecha2 = st.columns(2)
+                with col_fecha:
+                    fecha_min = st.date_input("Desde", value=df_viz['FECHA'].min().date())
+                with col_fecha2:
+                    fecha_max = st.date_input("Hasta", value=df_viz['FECHA'].max().date())
+                mask = (df_viz['FECHA'].dt.date >= fecha_min) & (df_viz['FECHA'].dt.date <= fecha_max)
+                df_filtrado = df_viz[mask].copy()
             else:
-                df_filtrado = df_viz
+                df_filtrado = df_viz.copy()
+
+            # ---------- Formateo de columnas para presentación ----------
+            # Fecha: quitar hora
+            if 'FECHA' in df_filtrado.columns and not df_filtrado['FECHA'].isna().all():
+                df_filtrado['FECHA'] = df_filtrado['FECHA'].dt.strftime('%Y-%m-%d')
+
+            # Función para convertir números sin decimales a enteros
+            def formatear_numero(valor):
+                try:
+                    if pd.isna(valor):
+                        return ""
+                    num = float(valor)
+                    if num.is_integer():
+                        return str(int(num))
+                    else:
+                        return str(num)
+                except (ValueError, TypeError):
+                    return str(valor)
+
+            # Aplicar formateo a columnas numéricas
+            for col in ['TORRE', 'N°DPTO', 'PAGOS', 'N°OPERACIÓN']:
+                if col in df_filtrado.columns:
+                    df_filtrado[col] = df_filtrado[col].apply(formatear_numero)
 
             # Orden de columnas deseado
             columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN', 'PAGOS', 'N°OPERACIÓN']
             columnas_existentes = [col for col in columnas_final if col in df_filtrado.columns]
             st.dataframe(df_filtrado[columnas_existentes].fillna(""), use_container_width=True, height=600)
 
-            # --- Botón de descarga (corregido) ---
-            # Convertir DataFrame a bytes en memoria
+            # Botón de descarga a Excel
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_filtrado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                df_filtrado[columnas_existentes].to_excel(writer, index=False, sheet_name=hoja_seleccionada)
             excel_data = output.getvalue()
 
             st.download_button(
