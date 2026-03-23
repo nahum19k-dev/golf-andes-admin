@@ -132,36 +132,72 @@ with tab1:
         except Exception as e:
             st.error(f"Error al procesar: {str(e)}")
 
-# ====================== TAB 2: VISUALIZAR ORDENADO ======================
+# ====================== TAB 2: VISUALIZAR PAGOS ORDENADOS ======================
 with tab2:
     st.subheader("📊 Visualizar Pagos Ordenados")
 
-    # Si ya se procesó un archivo, usar df_coinciden
-    if 'df_coinciden' in locals() and not df_coinciden.empty:
-        df_viz = df_coinciden.copy()
-        df_viz = df_viz.rename(columns={
-            'fecha': 'FECHA',
-            'torre': 'TORRE',
-            'departamento': 'N°DPTO',
-            'nombre': 'NOMBRES Y APELLIDOS',
-            'ingresos': 'PAGOS',
-            'n_operacion': 'N°OPERACIÓN'
-        })
-        if dni_col:
-            df_viz = df_viz.rename(columns={dni_col: 'DNI'})
+    # Cargar lista de hojas de pagos guardadas
+    try:
+        hojas_pagos = gsheets.listar_hojas_pagos()
+    except Exception as e:
+        st.error(f"No se pudo conectar con Google Sheets: {e}")
+        hojas_pagos = []
 
-        df_viz['SITUACIÓN'] = "PROPIETARIO"
+    if hojas_pagos:
+        hoja_seleccionada = st.selectbox("Selecciona el período de pagos:", hojas_pagos)
+        df_guardado = gsheets.leer_hoja_pagos(hoja_seleccionada)
 
-        # Filtro por fecha
-        df_viz['FECHA'] = pd.to_datetime(df_viz['FECHA'], errors='coerce')
-        fecha_min = st.date_input("Desde", value=df_viz['FECHA'].min().date() if not df_viz.empty else datetime(2026,1,1))
-        fecha_max = st.date_input("Hasta", value=df_viz['FECHA'].max().date() if not df_viz.empty else datetime(2026,1,31))
+        if not df_guardado.empty:
+            # Mapeo de nombres de columna al formato deseado para mostrar
+            mapeo = {
+                'fecha': 'FECHA',
+                'torre': 'TORRE',
+                'departamento': 'N°DPTO',
+                'nombre': 'NOMBRES Y APELLIDOS',
+                'ingresos': 'PAGOS',
+                'n_operacion': 'N°OPERACIÓN',
+                'dni': 'DNI'
+            }
+            # Renombrar solo las columnas que existen
+            df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
-        mask = (df_viz['FECHA'].dt.date >= fecha_min) & (df_viz['FECHA'].dt.date <= fecha_max)
-        df_filtrado = df_viz[mask]
+            # Si falta DNI, agregar columna vacía
+            if 'DNI' not in df_viz.columns:
+                df_viz['DNI'] = ""
 
-        # Mostrar tabla exacta
-        columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN', 'PAGOS', 'N°OPERACIÓN']
-        st.dataframe(df_filtrado[columnas_final].fillna(""), use_container_width=True, height=600)
+            # Asegurar que exista la columna SITUACIÓN
+            if 'SITUACIÓN' not in df_viz.columns:
+                df_viz['SITUACIÓN'] = "PROPIETARIO"
+
+            # Filtro por fecha (si la columna FECHA existe)
+            if 'FECHA' in df_viz.columns:
+                df_viz['FECHA'] = pd.to_datetime(df_viz['FECHA'], errors='coerce')
+                if not df_viz['FECHA'].isna().all():
+                    col_fecha, col_fecha2 = st.columns(2)
+                    with col_fecha:
+                        fecha_min = st.date_input("Desde", value=df_viz['FECHA'].min().date())
+                    with col_fecha2:
+                        fecha_max = st.date_input("Hasta", value=df_viz['FECHA'].max().date())
+                    mask = (df_viz['FECHA'].dt.date >= fecha_min) & (df_viz['FECHA'].dt.date <= fecha_max)
+                    df_filtrado = df_viz[mask]
+                else:
+                    df_filtrado = df_viz
+            else:
+                df_filtrado = df_viz
+
+            # Orden de columnas deseado
+            columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN', 'PAGOS', 'N°OPERACIÓN']
+            columnas_existentes = [col for col in columnas_final if col in df_filtrado.columns]
+            st.dataframe(df_filtrado[columnas_existentes].fillna(""), use_container_width=True, height=600)
+
+            # Opcional: botón para descargar en Excel
+            st.download_button(
+                label="📥 Descargar como Excel",
+                data=df_filtrado.to_excel(index=False),
+                file_name=f"{hoja_seleccionada}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.info("La hoja seleccionada está vacía.")
     else:
-        st.info("Primero sube un archivo en la pestaña 'Subir y Procesar' para visualizar los datos.")
+        st.info("No hay hojas de pagos guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
