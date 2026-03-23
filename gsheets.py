@@ -24,28 +24,18 @@ def leer_propietarios():
     todos = sheet.get_all_values()
     if len(todos) < 2:
         return pd.DataFrame()
-    
     headers = todos[0]
     filas = todos[1:]
     df = pd.DataFrame(filas, columns=headers)
-    
-    # Limpia decimales y agrega ceros
-    def fix_zeros(col, length):
-        return (col.astype(str)
-                   .str.strip()
-                   .str.replace(r"\.0$", "", regex=True)
-                   .str.replace(r"[^0-9]", "", regex=True)
-                   .str.zfill(length))
-    
-    df["codigo"] = fix_zeros(df["codigo"], 5)
-    df["torre"]  = fix_zeros(df["torre"],  2)
-    df["dpto"]   = fix_zeros(df["dpto"],   3)
-    df["dni"]    = fix_zeros(df["dni"],    8)
-    
-    # Limpiar vacíos
-    df["codigo"] = df["codigo"].apply(lambda x: "" if x == "00000" else x)
-    df["torre"]  = df["torre"].apply(lambda x: "" if x == "00" else x)
-    df["dpto"]   = df["dpto"].apply(lambda x: "" if x == "000" else x)
-    df["dni"]    = df["dni"].apply(lambda x: "" if x == "00000000" else x)
-    
     return df
+
+def subir_excel_a_sheets(ruta_excel):
+    df = pd.read_excel(ruta_excel, dtype=str)
+    df = df.fillna("")
+    sheet = get_sheet("Propietarios")
+    sheet.clear()
+    sheet.update(
+        [df.columns.tolist()] + df.values.tolist(),
+        value_input_option="RAW"
+    )
+    return len(df)
