@@ -61,13 +61,45 @@ with tab1:
                 st.error("No se pudo cargar Propietarios")
                 st.stop()
 
-            # Merge
-            df_merged = df.merge(prop[['codigo', 'torre', 'departamento', 'nombre']], on='codigo', how='left')
+            # Mostrar columnas para depuración (opcional, se puede quitar luego)
+            st.write("**Columnas en Propietarios:**", list(prop.columns))
 
-            # DNI si existe
+            # Detectar columna de departamento
+            depto_col = None
+            posibles_nombres = ['departamento', 'dpto', 'depto', 'N°DPTO', 'depto_numero']
+            for col in prop.columns:
+                if col.lower() in posibles_nombres or col.lower() in [p.lower() for p in posibles_nombres]:
+                    depto_col = col
+                    break
+            if depto_col is None:
+                st.error("No se encontró columna de departamento en Propietarios. Las columnas disponibles son: " + ", ".join(prop.columns))
+                st.stop()
+
+            # Detectar columna de código (puede ser 'codigo' o 'codigo_prop' etc.)
+            codigo_col = 'codigo'
+            if codigo_col not in prop.columns:
+                # buscar alternativa
+                for col in prop.columns:
+                    if 'codigo' in col.lower():
+                        codigo_col = col
+                        break
+                else:
+                    st.error("No se encontró columna de código en Propietarios")
+                    st.stop()
+
+            # Seleccionar columnas necesarias para el merge
+            columnas_merge = [codigo_col, 'torre', depto_col, 'nombre']
+            # Añadir DNI si existe
             dni_col = next((c for c in prop.columns if 'dni' in c.lower()), None)
             if dni_col:
-                df_merged = df_merged.merge(prop[['codigo', dni_col]], on='codigo', how='left')
+                columnas_merge.append(dni_col)
+
+            # Realizar merge
+            df_merged = df.merge(prop[columnas_merge], left_on='codigo', right_on=codigo_col, how='left')
+
+            # Renombrar columna de departamento para consistencia interna
+            if depto_col != 'departamento':
+                df_merged.rename(columns={depto_col: 'departamento'}, inplace=True)
 
             # Separar coincidentes y no coincidentes
             df_coinciden = df_merged[df_merged['torre'].notna()].copy()
@@ -87,7 +119,7 @@ with tab1:
                 st.markdown("### Pagos que coincidieron")
                 cols = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'ingresos']
                 if dni_col:
-                    cols.insert(6, dni_col)
+                    cols.insert(6, dni_col)  # inserta DNI después de nombre
                 st.dataframe(df_coinciden[cols].fillna(""), use_container_width=True, height=400)
 
             if not df_no_coinciden.empty:
@@ -113,15 +145,10 @@ with tab1:
 
 # ====================== TAB 2: VISUALIZAR ORDENADO ======================
 with tab2:
-    st.subheader("📊 Visualizar Pagos Ordenados (como deseas)")
+    st.subheader("📊 Visualizar Pagos Ordenados")
 
-    # Aquí puedes cargar desde Sheets o usar los datos procesados
-    # Por ahora mostramos un ejemplo con filtro de fecha (puedes ampliar después)
-    st.info("Sube primero en la pestaña anterior para ver los datos procesados aquí.")
-
-    # Si quieres cargar histórico desde Sheets, avísame y lo agregamos
-
-    # Ejemplo de tabla final (formato exacto que pediste)
+    # Cargar datos guardados de la sesión o desde Sheets (opcional)
+    # Aquí se puede ampliar para leer directamente de Sheets
     if 'df_coinciden' in locals() and not df_coinciden.empty:
         df_viz = df_coinciden.copy()
         df_viz = df_viz.rename(columns={
@@ -145,6 +172,8 @@ with tab2:
         mask = (df_viz['FECHA'].dt.date >= fecha_min) & (df_viz['FECHA'].dt.date <= fecha_max)
         df_filtrado = df_viz[mask]
 
-        # Mostrar tabla EXACTA como la imagen
+        # Mostrar tabla exacta
         columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN', 'PAGOS', 'N°OPERACIÓN']
         st.dataframe(df_filtrado[columnas_final].fillna(""), use_container_width=True, height=600)
+    else:
+        st.info("Primero sube un archivo en la pestaña 'Subir y Procesar' para visualizar los datos.")
