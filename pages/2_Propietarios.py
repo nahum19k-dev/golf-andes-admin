@@ -1,5 +1,6 @@
 import streamlit as st
-import json, pandas as pd
+import pandas as pd
+from gsheets import get_sheet
 
 st.set_page_config(page_title="Datos Propietarios", page_icon="📊", layout="wide")
 st.markdown("""<style>
@@ -7,26 +8,29 @@ st.markdown("""<style>
 [data-testid="stSidebar"] * { color: white !important; }
 </style>""", unsafe_allow_html=True)
 
-@st.cache_data
+@st.cache_data(ttl=60)
 def cargar():
-    with open("propietarios.json","r",encoding="utf-8") as f:
-        return pd.DataFrame(json.load(f))
+    sheet = get_sheet("Propietarios")
+    datos = sheet.get_all_records()
+    return pd.DataFrame(datos)
 
-df = cargar()
-st.markdown("### Datos Propietarios")
-filtro = st.text_input("Filtrar (DNI, nombre, codigo, torre):")
-if filtro:
-    mask = (df["dni"].str.contains(filtro,case=False,na=False)|
-            df["nombre"].str.contains(filtro,case=False,na=False)|
-            df["codigo"].str.contains(filtro,case=False,na=False)|
-            df["torre"].str.contains(filtro,case=False,na=False))
-    mostrar = df[mask]
-else:
-    mostrar = df
-
-st.markdown("Mostrando **" + str(len(mostrar)) + "** propietarios")
-tabla = mostrar[["codigo","torre","dpto","dni","nombre","celular","correo","situacion"]].copy()
-tabla.columns = ["Codigo","Torre","N Dpto","DNI","Nombres y Apellidos","Celular","Correo","Situacion"]
-st.dataframe(tabla.reset_index(drop=True), use_container_width=True, hide_index=True, height=500)
-csv = tabla.to_csv(index=False).encode("utf-8")
-st.download_button("Descargar CSV", csv, "propietarios.csv", "text/csv")
+try:
+    df = cargar()
+    st.markdown("### Datos Propietarios")
+    filtro = st.text_input("Filtrar (DNI, nombre, codigo, torre):")
+    if filtro:
+        mask = (df["dni"].astype(str).str.contains(filtro, case=False, na=False) |
+                df["nombre"].astype(str).str.contains(filtro, case=False, na=False) |
+                df["codigo"].astype(str).str.contains(filtro, case=False, na=False) |
+                df["torre"].astype(str).str.contains(filtro, case=False, na=False))
+        mostrar = df[mask]
+    else:
+        mostrar = df
+    st.markdown("Mostrando **" + str(len(mostrar)) + "** propietarios")
+    tabla = mostrar[["codigo","torre","dpto","dni","nombre","celular","correo","situacion"]].copy()
+    tabla.columns = ["Codigo","Torre","N Dpto","DNI","Nombres y Apellidos","Celular","Correo","Situacion"]
+    st.dataframe(tabla.reset_index(drop=True), use_container_width=True, hide_index=True, height=500)
+    csv = tabla.to_csv(index=False).encode("utf-8")
+    st.download_button("Descargar CSV", csv, "propietarios.csv", "text/csv")
+except Exception as e:
+    st.error(f"Error conectando con Google Sheets: {e}")
