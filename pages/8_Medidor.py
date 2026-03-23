@@ -29,16 +29,8 @@ with tab1:
             # Leer archivo
             df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
 
-            # Limpiar nombres de columnas (quitar espacios, saltos de línea)
+            # Limpiar nombres de columnas
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
-
-            # Eliminar fila de total (si existe)
-            # Buscar la columna que contiene "MONTO"
-            col_monto = next((c for c in df_raw.columns if 'MONTO' in c.upper()), None)
-            if col_monto:
-                last_val = str(df_raw[col_monto].iloc[-1])
-                if 'SUM' in last_val.upper() or '=' in last_val:
-                    df_raw = df_raw.iloc[:-1].copy()
 
             # Renombrar columnas a nombres internos (usando nombres exactos que salen del Excel)
             renombres = {
@@ -49,12 +41,25 @@ with tab1:
                 'N° DE MEDIDOR': 'n_medidor',
                 'MONTO A PAGAR': 'monto'
             }
-            # Renombrar solo las columnas que existen
             for old, new in renombres.items():
                 if old in df_raw.columns:
                     df_raw.rename(columns={old: new}, inplace=True)
 
             df = df_raw.copy()
+
+            # --- Filtro inicial: eliminar filas sin torre o departamento (no son medidores válidos)
+            # También eliminar filas que tengan "TOTAL" en la columna de código o descripción
+            if 'codigo_raw' in df.columns:
+                df = df[~df['codigo_raw'].astype(str).str.contains('TOTAL', case=False, na=False)]
+            if 'torre' in df.columns:
+                df = df[df['torre'].notna()]
+            if 'departamento' in df.columns:
+                df = df[df['departamento'].notna()]
+
+            # Si no quedan filas, detener
+            if df.empty:
+                st.warning("No se encontraron filas válidas con torre y departamento. Revisa el archivo.")
+                st.stop()
 
             # Convertir torre y departamento a números
             df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
@@ -176,7 +181,6 @@ with tab2:
         df_guardado = gsheets.leer_hoja_medidor(hoja_seleccionada)
 
         if not df_guardado.empty:
-            # Función de formateo (misma que arriba)
             def formatear_numero(valor):
                 try:
                     if pd.isna(valor):
@@ -207,12 +211,11 @@ with tab2:
             }
             df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
-            # Orden de columnas deseado
             columnas_final = ['CÓDIGO', 'TORRE', 'DPTO', 'PROPIETARIO', 'DNI', 'MEDIDOR INSTALADO', 'N° MEDIDOR', 'MONTO (S/)']
             columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
             st.dataframe(df_viz[columnas_existentes].fillna(""), use_container_width=True, height=600)
 
-            # Botón de descarga (el archivo descargado conservará el formateo como texto)
+            # Botón de descarga
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
