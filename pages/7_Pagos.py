@@ -131,12 +131,10 @@ with tab1:
 
         except Exception as e:
             st.error(f"Error al procesar: {str(e)}")
-
 # ====================== TAB 2: VISUALIZAR PAGOS ORDENADOS ======================
 with tab2:
     st.subheader("📊 Visualizar Pagos Ordenados")
 
-    # Cargar lista de hojas de pagos guardadas
     try:
         hojas_pagos = gsheets.listar_hojas_pagos()
     except Exception as e:
@@ -148,7 +146,7 @@ with tab2:
         df_guardado = gsheets.leer_hoja_pagos(hoja_seleccionada)
 
         if not df_guardado.empty:
-            # Mapeo de nombres de columna al formato deseado para mostrar
+            # Mapeo de nombres de columna al formato deseado
             mapeo = {
                 'fecha': 'FECHA',
                 'torre': 'TORRE',
@@ -158,18 +156,14 @@ with tab2:
                 'n_operacion': 'N°OPERACIÓN',
                 'dni': 'DNI'
             }
-            # Renombrar solo las columnas que existen
             df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
-            # Si falta DNI, agregar columna vacía
             if 'DNI' not in df_viz.columns:
                 df_viz['DNI'] = ""
-
-            # Asegurar que exista la columna SITUACIÓN
             if 'SITUACIÓN' not in df_viz.columns:
                 df_viz['SITUACIÓN'] = "PROPIETARIO"
 
-            # Filtro por fecha (si la columna FECHA existe)
+            # Filtro por fecha
             if 'FECHA' in df_viz.columns:
                 df_viz['FECHA'] = pd.to_datetime(df_viz['FECHA'], errors='coerce')
                 if not df_viz['FECHA'].isna().all():
@@ -190,10 +184,17 @@ with tab2:
             columnas_existentes = [col for col in columnas_final if col in df_filtrado.columns]
             st.dataframe(df_filtrado[columnas_existentes].fillna(""), use_container_width=True, height=600)
 
-            # Opcional: botón para descargar en Excel
+            # --- Botón de descarga (corregido) ---
+            # Convertir DataFrame a bytes en memoria
+            import io
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_filtrado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+            excel_data = output.getvalue()
+
             st.download_button(
                 label="📥 Descargar como Excel",
-                data=df_filtrado.to_excel(index=False),
+                data=excel_data,
                 file_name=f"{hoja_seleccionada}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
@@ -201,3 +202,4 @@ with tab2:
             st.info("La hoja seleccionada está vacía.")
     else:
         st.info("No hay hojas de pagos guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+
