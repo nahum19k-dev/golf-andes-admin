@@ -23,48 +23,47 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
-        df_raw = pd.read_excel(uploaded_file, sheet_name=0)
-        df_raw.columns = df_raw.columns.str.strip()
+        # Lectura corregida: saltar metadatos (5 filas)
+        df_raw = pd.read_excel(
+            uploaded_file,
+            sheet_name=0,
+            skiprows=5,
+            header=0
+        )
+
+        # Limpieza de nombres de columnas
+        df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
         st.success(f"Archivo leído: {len(df_raw)} filas")
 
-        # Diagnóstico: mostrar columnas reales detectadas
-        st.write("**Columnas detectadas en el Excel:**")
+        # Mostrar columnas detectadas (para depuración)
+        st.write("**Columnas detectadas después de skiprows:**")
         st.write(list(df_raw.columns))
 
-        # Renombrar flexible para 'descripcion'
-        descripcion_col = None
+        # Renombrar flexible
+        rename_dict = {}
         for col in df_raw.columns:
-            col_lower = str(col).lower().strip()
+            col_lower = col.lower().strip()
             if 'descripcion' in col_lower or 'operaciones' in col_lower:
-                descripcion_col = col
-                break
+                rename_dict[col] = 'descripcion'
+            elif 'ingresos' in col_lower or 'monto' in col_lower:
+                rename_dict[col] = 'ingresos'
+            elif 'fecha' in col_lower:
+                rename_dict[col] = 'fecha'
+            elif 'n°' in col_lower or 'operación' in col_lower:
+                rename_dict[col] = 'n_operacion'
 
-        if not descripcion_col:
-            st.error("No se encontró columna que contenga 'DESCRIPCION' o 'OPERACIONES'")
-            st.stop()
+        df = df_raw.rename(columns=rename_dict)
 
-        df = df_raw.rename(columns={descripcion_col: 'descripcion'})
-
-        # Renombrar ingresos y fecha (similar)
-        for orig, nuevo in [
-            ('INGRESOS', 'ingresos'),
-            ('Ingresos', 'ingresos'),
-            ('MONTO', 'ingresos'),  # por si acaso
-            ('Fecha', 'fecha'),
-            ('FECHA', 'fecha')
-        ]:
-            if orig in df.columns:
-                df = df.rename(columns={orig: nuevo})
-
-        # Verificar que existan las columnas mínimas
+        # Verificaciones mínimas
         if 'descripcion' not in df.columns:
-            st.error("Columna 'descripcion' no pudo ser creada")
+            st.error("No se encontró columna con 'DESCRIPCION' o 'OPERACIONES' después de procesar")
             st.stop()
-        if 'ingresos' not in df.columns:
-            st.warning("No se encontró columna de 'INGRESOS'. Se intentará continuar sin ella.")
 
-        # Extraer código (últimos 5 dígitos)
+        if 'ingresos' not in df.columns:
+            st.warning("No se detectó columna 'INGRESOS'. Continuando sin totales precisos.")
+
+        # Extraer código (últimos 5 dígitos de descripcion)
         def extraer_codigo(desc):
             if pd.isna(desc):
                 return None
@@ -79,7 +78,7 @@ if uploaded_file is not None:
             st.error("No se pudo cargar la hoja 'Propietarios'")
             st.stop()
 
-        # Merge usando 'codigo'
+        # Merge
         df_merged = df.merge(
             prop[['codigo', 'torre', 'departamento', 'nombre']],
             on='codigo',
@@ -89,18 +88,14 @@ if uploaded_file is not None:
         # DNI si existe
         dni_col = next((c for c in prop.columns if 'dni' in c.lower()), None)
         if dni_col:
-            df_merged = df_merged.merge(
-                prop[['codigo', dni_col]],
-                on='codigo',
-                how='left'
-            )
+            df_merged = df_merged.merge(prop[['codigo', dni_col]], on='codigo', how='left')
 
-        # Convertir a numérico para orden
+        # Convertir para ordenamiento
         for col in ['torre', 'departamento']:
             if col in df_merged.columns:
                 df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce')
 
-        # Separar coinciden / no coinciden
+        # Separar
         df_coinciden = df_merged[df_merged['torre'].notna()].copy()
         df_no_coinciden = df_merged[df_merged['torre'].isna()].copy()
 
@@ -120,13 +115,13 @@ if uploaded_file is not None:
             st.metric("Total coincidentes", f"S/ {total:,.2f}")
 
         if not df_no_coinciden.empty:
-            st.markdown("### Sin coincidencia (revisar)")
+            st.markdown("### Sin coincidencia")
             st.dataframe(df_no_coinciden[['fecha', 'descripcion', 'codigo', 'ingresos']].fillna(""),
                          use_container_width=True, height=300)
 
-        # Guardar botón (ya lo tienes implementado en versiones anteriores)
+        # Aquí puedes agregar el botón de guardar como en versiones anteriores
 
     except Exception as e:
-        st.error(f"Error general al procesar: {str(e)}")
+        st.error(f"Error al procesar el archivo: {str(e)}")
         import traceback
         st.code(traceback.format_exc(), language="python")
