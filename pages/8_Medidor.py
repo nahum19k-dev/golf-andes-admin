@@ -46,32 +46,43 @@ with tab1:
 
             df = df_raw.copy()
 
-            # ========== FILTRADO ROBUSTO ==========
-            # 1. Eliminar filas donde la columna 'codigo_raw' contenga "TOTAL"
+            # ========== FILTRADO ROBUSTO (MÁS ESTRICTO) ==========
+            # 1. Eliminar filas donde la columna 'codigo_raw' contenga "TOTAL" o no sea numérica
             if 'codigo_raw' in df.columns:
-                df = df[~df['codigo_raw'].astype(str).str.contains('TOTAL', case=False, na=False)]
+                df['codigo_raw'] = df['codigo_raw'].astype(str).str.strip()
+                df = df[~df['codigo_raw'].str.contains('TOTAL', case=False, na=False)]
+                df = df[df['codigo_raw'].str.match(r'^\d{4,5}$', na=False)]
 
-            # 2. Convertir torre y departamento a numérico (los no numéricos se convierten en NaN)
+            # 2. Convertir torre y departamento a numérico
             df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
             df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
 
-            # 3. Eliminar filas donde torre o departamento sean NaN (no numéricos)
+            # 3. Eliminar filas donde torre o departamento sean NaN o <= 0
             df = df.dropna(subset=['torre', 'departamento'])
-
-            # 4. Eliminar filas con torre o departamento <= 0 (valores inválidos)
             df = df[(df['torre'] > 0) & (df['departamento'] > 0)]
 
-            # Si después de filtrar no quedan filas, mostrar advertencia
+            # 4. Filtrar solo medidores instalados (columna 'medidor_instalado' debe ser "SI")
+            if 'medidor_instalado' in df.columns:
+                df['medidor_instalado'] = df['medidor_instalado'].astype(str).str.strip().str.upper()
+                df = df[df['medidor_instalado'] == 'SI']
+
+            # 5. Quitar filas donde 'n_medidor' esté vacío
+            if 'n_medidor' in df.columns:
+                df = df[df['n_medidor'].notna() & (df['n_medidor'].astype(str).str.strip() != '')]
+
+            # 6. Quitar filas donde 'monto' no sea numérico o sea <= 0
+            if 'monto' in df.columns:
+                df['monto'] = pd.to_numeric(df['monto'], errors='coerce')
+                df = df[df['monto'] > 0]
+
             if df.empty:
-                st.warning("No se encontraron filas válidas con torre y departamento numéricos. Revisa el archivo.")
+                st.warning("No se encontraron filas válidas después de los filtros. Revisa el archivo.")
                 st.stop()
 
-            # Mostrar cantidad de filas válidas
             st.info(f"✅ Filas válidas después de filtrar: {len(df)}")
 
             # Procesar código para 5 dígitos (solo para mostrar)
             if 'codigo_raw' in df.columns:
-                df['codigo_raw'] = df['codigo_raw'].astype(str).str.strip()
                 df['codigo_5d'] = df['codigo_raw'].apply(lambda x: x.zfill(5) if len(x) == 4 else x)
             else:
                 df['codigo_5d'] = ""
@@ -97,31 +108,27 @@ with tab1:
             prop['torre'] = pd.to_numeric(prop['torre'], errors='coerce')
             prop[depto_col_prop] = pd.to_numeric(prop[depto_col_prop], errors='coerce')
 
-            # Merge usando torre y departamento (prop tiene columna depto con nombre detectado)
+            # Merge usando torre y departamento
             df_merged = df.merge(
                 prop[['torre', depto_col_prop, 'nombre', 'dni', 'codigo']],
                 left_on=['torre', 'departamento'],
                 right_on=['torre', depto_col_prop],
                 how='left'
             )
-
-            # Renombrar columna de código del propietario para evitar confusión
             df_merged.rename(columns={'codigo': 'codigo_propietario'}, inplace=True)
 
             # Separar coincidentes y no coincidentes
             df_coinciden = df_merged[df_merged['nombre'].notna()].copy()
             df_no_coinciden = df_merged[df_merged['nombre'].isna()].copy()
 
-            # Ordenar
+            # Ordenar y resetear índice
             df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento'])
-
-            # Resetear índices para que empiecen en 1
             df_coinciden.reset_index(drop=True, inplace=True)
             df_coinciden.index = df_coinciden.index + 1
             df_no_coinciden.reset_index(drop=True, inplace=True)
             df_no_coinciden.index = df_no_coinciden.index + 1
 
-            # Función para formatear números sin .0
+            # Formatear números
             def formatear_numero(valor):
                 try:
                     if pd.isna(valor):
@@ -134,7 +141,6 @@ with tab1:
                 except (ValueError, TypeError):
                     return str(valor)
 
-            # Aplicar formateo a columnas numéricas antes de mostrar
             for col in ['codigo_5d', 'torre', 'departamento', 'n_medidor', 'monto']:
                 if col in df_coinciden.columns:
                     df_coinciden[col] = df_coinciden[col].apply(formatear_numero)
@@ -157,9 +163,7 @@ with tab1:
             # Botón guardar
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
-                    # Preparar DataFrame para guardar (deshacer el formateo para guardar como números)
                     df_guardar = df_coinciden[['codigo_5d', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']].copy()
-                    # Reconvertir a numérico para guardar
                     for col in ['codigo_5d', 'torre', 'departamento', 'n_medidor', 'monto']:
                         if col in df_guardar.columns:
                             df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce')
@@ -203,12 +207,10 @@ with tab2:
                 except (ValueError, TypeError):
                     return str(valor)
 
-            # Aplicar formateo a las columnas numéricas antes de mostrar
             for col in ['codigo', 'torre', 'departamento', 'n_medidor', 'monto']:
                 if col in df_guardado.columns:
                     df_guardado[col] = df_guardado[col].apply(formatear_numero)
 
-            # Renombrar columnas para visualización amigable
             mapeo = {
                 'codigo': 'CÓDIGO',
                 'torre': 'TORRE',
@@ -225,7 +227,6 @@ with tab2:
             columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
             st.dataframe(df_viz[columnas_existentes].fillna(""), use_container_width=True, height=600)
 
-            # Botón de descarga
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
