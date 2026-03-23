@@ -66,7 +66,7 @@ with tab1:
                 st.warning("No se encontraron filas válidas con torre y departamento numéricos. Revisa el archivo.")
                 st.stop()
 
-            # Mostrar cantidad de filas válidas (opcional)
+            # Mostrar cantidad de filas válidas
             st.info(f"✅ Filas válidas después de filtrar: {len(df)}")
 
             # Procesar código para 5 dígitos (solo para mostrar)
@@ -114,6 +114,12 @@ with tab1:
 
             # Ordenar
             df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento'])
+
+            # Resetear índices para que empiecen en 1
+            df_coinciden.reset_index(drop=True, inplace=True)
+            df_coinciden.index = df_coinciden.index + 1
+            df_no_coinciden.reset_index(drop=True, inplace=True)
+            df_no_coinciden.index = df_no_coinciden.index + 1
 
             # Función para formatear números sin .0
             def formatear_numero(valor):
