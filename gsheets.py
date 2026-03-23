@@ -30,6 +30,7 @@ def leer_propietarios():
     return df
 
 def subir_excel_a_sheets(ruta_excel):
+    st.cache_resource.clear()  # ✅ limpia caché
     df = pd.read_excel(ruta_excel, dtype=str)
     df = df.fillna("")
     sheet = get_sheet("Propietarios")
