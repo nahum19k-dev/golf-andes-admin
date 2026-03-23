@@ -17,3 +17,14 @@ def get_sheet(nombre_hoja):
     sheet_id = st.secrets["sheets"]["spreadsheet_id"]
     spreadsheet = client.open_by_key(sheet_id)
     return spreadsheet.worksheet(nombre_hoja)
+
+def leer_propietarios():
+    sheet = get_sheet("Propietarios")
+    datos = sheet.get_all_records(value_render_option="FORMATTED_VALUE")
+    import pandas as pd
+    df = pd.DataFrame(datos)
+    # Forzar texto con ceros
+    for col in ["codigo", "torre", "dpto", "dni"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+    return df
