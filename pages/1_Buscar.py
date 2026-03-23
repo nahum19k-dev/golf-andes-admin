@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from gsheets import get_sheet
+from gsheets import get_sheet, leer_propietarios
 
 st.set_page_config(page_title="Buscar Propietario", page_icon="🔍", layout="wide")
 
@@ -16,9 +16,7 @@ div[data-testid="column"]:nth-child(3) .stButton > button { background:#b71c1c !
 
 @st.cache_data(ttl=60)
 def cargar_datos():
-    sheet = get_sheet("Propietarios")
-    datos = sheet.get_all_records()
-    return pd.DataFrame(datos)
+    return leer_propietarios()
 
 try:
     if "df" not in st.session_state:
@@ -29,9 +27,9 @@ try:
 
     c1,c2,c3,c4 = st.columns(4)
     c1.metric("Total Propietarios", len(df))
-    c2.metric("Con Torre/Dpto", df[df["torre"].astype(str).str.strip()!=""].shape[0])
+    c2.metric("Con Torre/Dpto", df[df["torre"].str.strip()!=""].shape[0])
     c3.metric("En Alquiler", df[df["situacion"].astype(str).str.lower().str.contains("alquil",na=False)].shape[0])
-    c4.metric("Sin DNI", df[df["dni"].astype(str)==""].shape[0])
+    c4.metric("Sin DNI", df[df["dni"]==""].shape[0])
     st.markdown("---")
 
     col_dni, col_cod, col_nom = st.columns([2,2,3])
@@ -48,8 +46,8 @@ try:
     with b3: btn_eliminar = st.button("ELIMINAR", use_container_width=True)
 
     resultado = df.copy()
-    if buscar_dni: resultado = resultado[resultado["dni"].astype(str).str.contains(buscar_dni.strip(), na=False)]
-    if buscar_cod: resultado = resultado[resultado["codigo"].astype(str).str.contains(buscar_cod.strip(), na=False)]
+    if buscar_dni: resultado = resultado[resultado["dni"].str.contains(buscar_dni.strip(), na=False)]
+    if buscar_cod: resultado = resultado[resultado["codigo"].str.contains(buscar_cod.strip(), na=False)]
     if buscar_nom: resultado = resultado[resultado["nombre"].astype(str).str.upper().str.contains(buscar_nom.upper(), na=False)]
     hay_busqueda = buscar_dni or buscar_cod or buscar_nom or btn_buscar
 
@@ -86,10 +84,9 @@ try:
                 t = str(int(n_torre)).zfill(2) if n_torre else ""
                 d = str(int(n_dpto)).zfill(3)  if n_dpto  else ""
                 cod = t + d if t and d else ""
-                nuevo = {"codigo":cod,"torre":n_torre,"dpto":n_dpto,"dni":dni_val,
+                nuevo = {"codigo":cod,"torre":t,"dpto":d,"dni":dni_val,
                          "nombre":n_nombre.upper(),"direccion":n_dir,
                          "celular":n_cel,"correo":n_correo,"situacion":n_sit}
-                # Guardar en Google Sheets
                 sheet = get_sheet("Propietarios")
                 sheet.append_row(list(nuevo.values()))
                 st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([nuevo])], ignore_index=True)
