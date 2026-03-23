@@ -27,16 +27,13 @@ with tab1:
 
             # Limpiar nombres de columnas
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
-            st.write("📋 Columnas detectadas en el archivo:", list(df_raw.columns))
 
             # Función para buscar columna con prioridad
             def find_column(priority_keywords, fallback_keywords=None):
-                # Primero buscar por palabras clave prioritarias (ej. "n°")
                 for col in df_raw.columns:
                     col_lower = col.lower()
                     if any(pk.lower() in col_lower for pk in priority_keywords):
                         return col
-                # Si no, buscar con palabras de respaldo (ej. "medidor")
                 if fallback_keywords:
                     for col in df_raw.columns:
                         col_lower = col.lower()
@@ -48,19 +45,9 @@ with tab1:
             col_codigo = find_column(['codigo', 'código'])
             col_edificio = find_column(['edificio', 'torre'])
             col_dpto = find_column(['dpto', 'departamento'])
-            # Para medidor instalado: solo palabras clave "medidor instalado"
-            col_med_inst = find_column(['medidor instalado'], fallback_keywords=None)
-            # Para número de medidor: priorizar "n°", "nº", "número"
+            col_med_inst = find_column(['medidor instalado'])  # solo esta
             col_n_med = find_column(['n°', 'nº', 'número'], fallback_keywords=['medidor'])
             col_monto = find_column(['monto a pagar', 'monto', 'pago'])
-
-            st.write("🔍 Columnas detectadas:")
-            st.write(f"- CODIGO: {col_codigo}")
-            st.write(f"- EDIFICIO: {col_edificio}")
-            st.write(f"- DPTO: {col_dpto}")
-            st.write(f"- MEDIDOR INSTALADO: {col_med_inst}")
-            st.write(f"- N° DE MEDIDOR: {col_n_med}")
-            st.write(f"- MONTO A PAGAR: {col_monto}")
 
             # Crear DataFrame con nombres estandarizados
             df = pd.DataFrame()
@@ -77,11 +64,7 @@ with tab1:
             if col_monto:
                 df['monto'] = df_raw[col_monto]
 
-            # Mostrar primeras filas para verificar (opcional)
-            st.write("Primeras 5 filas del DataFrame estandarizado:")
-            st.dataframe(df.head())
-
-            # ========== FILTRADO ==========
+            # ========== FILTRADO ROBUSTO ==========
             # 1. Código: eliminar TOTAL, mantener 4-5 dígitos
             if 'codigo_raw' in df.columns:
                 df['codigo_raw'] = df['codigo_raw'].str.split('.').str[0]  # quitar decimales
@@ -138,10 +121,14 @@ with tab1:
                 st.error("No se encontró columna de departamento en Propietarios. Columnas: " + ", ".join(prop.columns))
                 st.stop()
 
+            # Asegurar tipos numéricos en prop
             prop['torre'] = pd.to_numeric(prop['torre'], errors='coerce')
             prop[depto_col_prop] = pd.to_numeric(prop[depto_col_prop], errors='coerce')
 
-            # Merge usando torre y departamento
+            # Eliminar duplicados en prop (misma torre y departamento)
+            prop = prop.drop_duplicates(subset=['torre', depto_col_prop], keep='first')
+
+            # Merge
             df_merged = df.merge(
                 prop[['torre', depto_col_prop, 'nombre', 'dni', 'codigo']],
                 left_on=['torre', 'departamento'],
@@ -154,14 +141,14 @@ with tab1:
             df_coinciden = df_merged[df_merged['nombre'].notna()].copy()
             df_no_coinciden = df_merged[df_merged['nombre'].isna()].copy()
 
-            # Ordenar y resetear índice
+            # Ordenar y resetear índice (empezar en 1)
             df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento'])
             df_coinciden.reset_index(drop=True, inplace=True)
             df_coinciden.index = df_coinciden.index + 1
             df_no_coinciden.reset_index(drop=True, inplace=True)
             df_no_coinciden.index = df_no_coinciden.index + 1
 
-            # Formatear números
+            # Formatear números sin .0
             def formatear_numero(valor):
                 try:
                     if pd.isna(valor):
