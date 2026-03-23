@@ -8,15 +8,6 @@ st.set_page_config(page_title="Medidores de Agua", layout="wide")
 
 st.title("💧 Medidores - Registro de Instalación y Pagos")
 
-# Mostrar información sobre el código de 5 dígitos
-with st.expander("ℹ️ Información sobre el código de 5 dígitos", expanded=False):
-    st.info("""
-    - En el archivo Excel, la columna **CODIGO** corresponde a un número de **5 dígitos** que combina torre y departamento.
-    - Ejemplo: **01102** = Torre 1, Departamento 102.  
-    - Si el archivo muestra solo 4 dígitos (ej. 1102), automáticamente se agregará un **0** al inicio para completar 5 dígitos.
-    - Para el cruce con la lista de propietarios, se usan las columnas **EDIFICIO** y **DPTO** directamente, por lo que el formato del código no afecta.
-    """)
-
 tab1, tab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Medidores"])
 
 # ====================== TAB 1: SUBIR Y PROCESAR ======================
@@ -38,16 +29,18 @@ with tab1:
             # Leer archivo
             df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
 
-            # Limpiar nombres de columnas
-            df_raw.columns = df_raw.columns.str.strip()
+            # Limpiar nombres de columnas (quitar espacios, saltos de línea)
+            df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
             # Eliminar fila de total (si existe)
-            if 'MONTO A PAGAR' in df_raw.columns:
-                last_val = str(df_raw['MONTO A PAGAR'].iloc[-1])
+            # Buscar en la columna de MONTO A PAGAR si la última fila contiene "SUM" o "="
+            col_monto = next((c for c in df_raw.columns if 'MONTO' in c.upper()), None)
+            if col_monto:
+                last_val = str(df_raw[col_monto].iloc[-1])
                 if 'SUM' in last_val.upper() or '=' in last_val:
                     df_raw = df_raw.iloc[:-1].copy()
 
-            # Renombrar columnas a nombres internos
+            # Renombrar columnas a nombres internos (usando nombres exactos que salen del Excel)
             renombres = {
                 'CODIGO': 'codigo_raw',
                 'EDIFICIO': 'torre',
@@ -56,16 +49,23 @@ with tab1:
                 'N° DE MEDIDOR': 'n_medidor',
                 'MONTO A PAGAR': 'monto'
             }
-            df = df_raw.rename(columns={col: renombres[col] for col in df_raw.columns if col in renombres})
+            # Renombrar solo las columnas que existen
+            for old, new in renombres.items():
+                if old in df_raw.columns:
+                    df_raw.rename(columns={old: new}, inplace=True)
 
-            # Procesar código para que tenga 5 dígitos (rellenar con cero a la izquierda)
-            df['codigo_raw'] = df['codigo_raw'].astype(str).str.strip()
-            df['codigo_5d'] = df['codigo_raw'].apply(lambda x: x.zfill(5) if len(x) == 4 else x)
-            # Nota: este código se usa solo para mostrar, no para el merge
+            df = df_raw.copy()
 
             # Convertir torre y departamento a números
             df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
             df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+
+            # Procesar código para 5 dígitos (solo para mostrar)
+            if 'codigo_raw' in df.columns:
+                df['codigo_raw'] = df['codigo_raw'].astype(str).str.strip()
+                df['codigo_5d'] = df['codigo_raw'].apply(lambda x: x.zfill(5) if len(x) == 4 else x)
+            else:
+                df['codigo_5d'] = ""
 
             # Cargar propietarios
             prop = gsheets.leer_propietarios()
@@ -73,14 +73,26 @@ with tab1:
                 st.error("No se pudo cargar Propietarios")
                 st.stop()
 
-            # Asegurar que las columnas en prop sean numéricas para el merge
-            prop['torre'] = pd.to_numeric(prop['torre'], errors='coerce')
-            prop['departamento'] = pd.to_numeric(prop['departamento'], errors='coerce')
+            # Detectar columna de departamento en prop
+            depto_col_prop = None
+            posibles = ['departamento', 'dpto', 'depto', 'N°DPTO']
+            for col in prop.columns:
+                if col.lower() in posibles:
+                    depto_col_prop = col
+                    break
+            if depto_col_prop is None:
+                st.error("No se encontró columna de departamento en Propietarios. Las columnas disponibles son: " + ", ".join(prop.columns))
+                st.stop()
 
-            # Merge usando torre y departamento
+            # Asegurar que las columnas de torre y departamento sean numéricas en prop
+            prop['torre'] = pd.to_numeric(prop['torre'], errors='coerce')
+            prop[depto_col_prop] = pd.to_numeric(prop[depto_col_prop], errors='coerce')
+
+            # Merge usando torre y departamento (prop tiene columna depto con nombre detectado)
             df_merged = df.merge(
-                prop[['torre', 'departamento', 'nombre', 'dni', 'codigo']],
-                on=['torre', 'departamento'],
+                prop[['torre', depto_col_prop, 'nombre', 'dni', 'codigo']],
+                left_on=['torre', 'departamento'],
+                right_on=['torre', depto_col_prop],
                 how='left'
             )
 
@@ -104,13 +116,13 @@ with tab1:
 
             if not df_no_coinciden.empty:
                 st.markdown("### Medidores sin coincidencia (revisar)")
-                st.dataframe(df_no_coinciden[['codigo_5d', 'torre', 'departamento', 'medidor_instalado', 'n_medidor', 'monto']].fillna(""),
-                             use_container_width=True, height=300)
+                cols_no = ['codigo_5d', 'torre', 'departamento', 'medidor_instalado', 'n_medidor', 'monto']
+                st.dataframe(df_no_coinciden[cols_no].fillna(""), use_container_width=True, height=300)
 
             # Botón guardar
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
-                    # Preparar DataFrame para guardar (usamos columnas útiles)
+                    # Preparar DataFrame para guardar
                     df_guardar = df_coinciden[['codigo_5d', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']].copy()
                     df_guardar.columns = ['codigo', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']
                     nombre_hoja = gsheets.guardar_medidor(
