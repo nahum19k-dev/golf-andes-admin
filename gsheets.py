@@ -125,3 +125,52 @@ def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, a
     st.cache_resource.clear()
     
     return nombre_hoja
+def guardar_pagos(df: pd.DataFrame, mes: str, anio: int):
+    """
+    Guarda los pagos en una hoja con nombre amigable (Pagos {mes} {anio}).
+    Si ya existe, agrega sufijo (2), (3), etc.
+    """
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import streamlit as st
+    import pandas as pd
+
+    # Nombre base
+    nombre_base = f"Pagos {mes} {anio}"
+
+    # Conectar a Sheets
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    client = gspread.authorize(creds)
+    sheet_id = st.secrets["sheets"]["spreadsheet_id"]
+    spreadsheet = client.open_by_key(sheet_id)
+
+    # Buscar nombre disponible
+    nombre_hoja = nombre_base
+    contador = 2
+    while True:
+        try:
+            spreadsheet.worksheet(nombre_hoja)
+            nombre_hoja = f"{nombre_base} ({contador})"
+            contador += 1
+        except gspread.exceptions.WorksheetNotFound:
+            break
+
+    # Crear hoja
+    nueva_hoja = spreadsheet.add_worksheet(title=nombre_hoja, rows=df.shape[0]+1, cols=df.shape[1])
+
+    # Subir datos
+    # Convertir fechas a string
+    df_para_guardar = df.copy()
+    for col in df_para_guardar.columns:
+        if pd.api.types.is_datetime64_any_dtype(df_para_guardar[col]):
+            df_para_guardar[col] = df_para_guardar[col].dt.strftime('%Y-%m-%d')
+        elif df_para_guardar[col].dtype == 'object':
+            df_para_guardar[col] = df_para_guardar[col].apply(
+                lambda x: x.strftime('%Y-%m-%d') if isinstance(x, pd.Timestamp) else x
+            )
+    df_para_guardar = df_para_guardar.astype(str).fillna("")
+    datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
+    nueva_hoja.update(datos, value_input_option="RAW")
+
+    return nombre_hoja
