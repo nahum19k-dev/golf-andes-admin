@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from gsheets import get_sheet
+from gsheets import leer_propietarios
 
 st.set_page_config(page_title="Datos Propietarios", page_icon="📊", layout="wide")
 st.markdown("""<style>
@@ -10,9 +10,7 @@ st.markdown("""<style>
 
 @st.cache_data(ttl=60)
 def cargar():
-    sheet = get_sheet("Propietarios")
-    datos = sheet.get_all_records()
-    return pd.DataFrame(datos)
+    return leer_propietarios()
 
 try:
     df = cargar()
