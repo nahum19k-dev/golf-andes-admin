@@ -2,126 +2,149 @@ import streamlit as st
 import pandas as pd
 import re
 import gsheets
+from datetime import datetime
 
 st.set_page_config(page_title="Pagos Bancos", layout="wide")
 
 st.title("💰 Pagos - Registro de Depósitos Bancos")
 
-col1, col2 = st.columns(2)
-with col1:
-    mes = st.selectbox("Mes", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                               "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"])
-with col2:
-    anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
+tab1, tab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Pagos Ordenados"])
 
-periodo_key = f"{mes.upper()}_{int(anio)}"
+# ====================== TAB 1: SUBIR Y PROCESAR ======================
+with tab1:
+    col1, col2 = st.columns(2)
+    with col1:
+        mes = st.selectbox("Mes", ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                                   "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"])
+    with col2:
+        anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
 
-uploaded_file = st.file_uploader(
-    "Sube el archivo Excel de DATA BANCOS (hoja ENERO o similar)",
-    type=["xlsx"]
-)
+    periodo_key = f"{mes.upper()}_{int(anio)}"
 
-if uploaded_file is not None:
-    try:
-        # Lectura corregida: saltar metadatos (5 filas)
-        df_raw = pd.read_excel(
-            uploaded_file,
-            sheet_name=0,
-            skiprows=5,
-            header=0
-        )
+    uploaded_file = st.file_uploader(
+        "Sube el archivo Excel de DATA BANCOS",
+        type=["xlsx"]
+    )
 
-        # Limpieza de nombres de columnas
-        df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
+    if uploaded_file is not None:
+        try:
+            # === LECTURA CORREGIDA (tu Excel tiene headers en fila 1 + columna vacía) ===
+            df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
 
-        st.success(f"Archivo leído: {len(df_raw)} filas")
+            # Eliminar columna vacía del principio y limpiar nombres
+            df_raw = df_raw.iloc[:, 1:]                    # quita la primera columna NaN/Unnamed
+            df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
-        # Mostrar columnas detectadas (para depuración)
-        st.write("**Columnas detectadas después de skiprows:**")
-        st.write(list(df_raw.columns))
+            st.success(f"Archivo leído correctamente: {len(df_raw)} filas")
+            st.write("**Columnas detectadas:**", list(df_raw.columns))
 
-        # Renombrar flexible
-        rename_dict = {}
-        for col in df_raw.columns:
-            col_lower = col.lower().strip()
-            if 'descripcion' in col_lower or 'operaciones' in col_lower:
-                rename_dict[col] = 'descripcion'
-            elif 'ingresos' in col_lower or 'monto' in col_lower:
-                rename_dict[col] = 'ingresos'
-            elif 'fecha' in col_lower:
-                rename_dict[col] = 'fecha'
-            elif 'n°' in col_lower or 'operación' in col_lower:
-                rename_dict[col] = 'n_operacion'
+            # Renombrar columnas clave
+            df = df_raw.rename(columns={
+                'Fecha': 'fecha',
+                'DESCRIPCION OPERACIONES': 'descripcion',
+                'N°OPERACIÓN': 'n_operacion',
+                'INGRESOS': 'ingresos'
+            })
 
-        df = df_raw.rename(columns=rename_dict)
+            # Extraer código (últimos 5 dígitos)
+            def extraer_codigo(desc):
+                if pd.isna(desc):
+                    return None
+                match = re.search(r'(\d{5})$', str(desc).strip())
+                return match.group(1) if match else None
 
-        # Verificaciones mínimas
-        if 'descripcion' not in df.columns:
-            st.error("No se encontró columna con 'DESCRIPCION' o 'OPERACIONES' después de procesar")
-            st.stop()
+            df['codigo'] = df['descripcion'].apply(extraer_codigo)
 
-        if 'ingresos' not in df.columns:
-            st.warning("No se detectó columna 'INGRESOS'. Continuando sin totales precisos.")
+            # Cargar propietarios
+            prop = gsheets.leer_propietarios()
+            if prop.empty:
+                st.error("No se pudo cargar Propietarios")
+                st.stop()
 
-        # Extraer código (últimos 5 dígitos de descripcion)
-        def extraer_codigo(desc):
-            if pd.isna(desc):
-                return None
-            match = re.search(r'(\d{5})$', str(desc).strip())
-            return match.group(1) if match else None
+            # Merge
+            df_merged = df.merge(prop[['codigo', 'torre', 'departamento', 'nombre']], on='codigo', how='left')
 
-        df['codigo'] = df['descripcion'].apply(extraer_codigo)
+            # DNI si existe
+            dni_col = next((c for c in prop.columns if 'dni' in c.lower()), None)
+            if dni_col:
+                df_merged = df_merged.merge(prop[['codigo', dni_col]], on='codigo', how='left')
 
-        # Cargar propietarios
-        prop = gsheets.leer_propietarios()
-        if prop.empty:
-            st.error("No se pudo cargar la hoja 'Propietarios'")
-            st.stop()
+            # Separar coincidentes y no coincidentes
+            df_coinciden = df_merged[df_merged['torre'].notna()].copy()
+            df_no_coinciden = df_merged[df_merged['torre'].isna()].copy()
 
-        # Merge
-        df_merged = df.merge(
-            prop[['codigo', 'torre', 'departamento', 'nombre']],
-            on='codigo',
-            how='left'
-        )
+            # Ordenar coincidentes
+            for col in ['torre', 'departamento']:
+                if col in df_coinciden.columns:
+                    df_coinciden[col] = pd.to_numeric(df_coinciden[col], errors='coerce')
 
-        # DNI si existe
-        dni_col = next((c for c in prop.columns if 'dni' in c.lower()), None)
+            df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento', 'nombre'])
+
+            # Mostrar resultados
+            st.subheader("✅ Resultado del procesamiento")
+
+            if not df_coinciden.empty:
+                st.markdown("### Pagos que coincidieron")
+                cols = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'ingresos']
+                if dni_col:
+                    cols.insert(6, dni_col)
+                st.dataframe(df_coinciden[cols].fillna(""), use_container_width=True, height=400)
+
+            if not df_no_coinciden.empty:
+                st.markdown("### Pagos sin coincidencia (revisar)")
+                st.dataframe(df_no_coinciden[['fecha', 'descripcion', 'codigo', 'ingresos']].fillna(""),
+                             use_container_width=True, height=300)
+
+            # Botón guardar
+            if st.button("💾 Guardar en Google Sheets", type="primary"):
+                try:
+                    nombre_hoja = gsheets.crear_y_guardar_programacion(
+                        df=df_coinciden,
+                        periodo_key=periodo_key,
+                        mes=mes,
+                        anio=int(anio)
+                    )
+                    st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                except Exception as e:
+                    st.error(f"Error al guardar: {str(e)}")
+
+        except Exception as e:
+            st.error(f"Error al procesar: {str(e)}")
+
+# ====================== TAB 2: VISUALIZAR ORDENADO ======================
+with tab2:
+    st.subheader("📊 Visualizar Pagos Ordenados (como deseas)")
+
+    # Aquí puedes cargar desde Sheets o usar los datos procesados
+    # Por ahora mostramos un ejemplo con filtro de fecha (puedes ampliar después)
+    st.info("Sube primero en la pestaña anterior para ver los datos procesados aquí.")
+
+    # Si quieres cargar histórico desde Sheets, avísame y lo agregamos
+
+    # Ejemplo de tabla final (formato exacto que pediste)
+    if 'df_coinciden' in locals() and not df_coinciden.empty:
+        df_viz = df_coinciden.copy()
+        df_viz = df_viz.rename(columns={
+            'fecha': 'FECHA',
+            'torre': 'TORRE',
+            'departamento': 'N°DPTO',
+            'nombre': 'NOMBRES Y APELLIDOS',
+            'ingresos': 'PAGOS',
+            'n_operacion': 'N°OPERACIÓN'
+        })
         if dni_col:
-            df_merged = df_merged.merge(prop[['codigo', dni_col]], on='codigo', how='left')
+            df_viz = df_viz.rename(columns={dni_col: 'DNI'})
 
-        # Convertir para ordenamiento
-        for col in ['torre', 'departamento']:
-            if col in df_merged.columns:
-                df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce')
+        df_viz['SITUACIÓN'] = "PROPIETARIO"
 
-        # Separar
-        df_coinciden = df_merged[df_merged['torre'].notna()].copy()
-        df_no_coinciden = df_merged[df_merged['torre'].isna()].copy()
+        # Filtro por fecha
+        df_viz['FECHA'] = pd.to_datetime(df_viz['FECHA'], errors='coerce')
+        fecha_min = st.date_input("Desde", value=df_viz['FECHA'].min().date() if not df_viz.empty else datetime(2026,1,1))
+        fecha_max = st.date_input("Hasta", value=df_viz['FECHA'].max().date() if not df_viz.empty else datetime(2026,1,31))
 
-        df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento', 'nombre'], na_position='last')
+        mask = (df_viz['FECHA'].dt.date >= fecha_min) & (df_viz['FECHA'].dt.date <= fecha_max)
+        df_filtrado = df_viz[mask]
 
-        # Mostrar
-        st.subheader(f"Pagos procesados - {mes} {anio}")
-
-        cols_mostrar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'ingresos']
-        if dni_col:
-            cols_mostrar.insert(6, dni_col)
-
-        if not df_coinciden.empty:
-            st.markdown("### Coincidencias")
-            st.dataframe(df_coinciden[cols_mostrar].fillna(""), use_container_width=True, height=500)
-            total = pd.to_numeric(df_coinciden['ingresos'], errors='coerce').sum()
-            st.metric("Total coincidentes", f"S/ {total:,.2f}")
-
-        if not df_no_coinciden.empty:
-            st.markdown("### Sin coincidencia")
-            st.dataframe(df_no_coinciden[['fecha', 'descripcion', 'codigo', 'ingresos']].fillna(""),
-                         use_container_width=True, height=300)
-
-        # Aquí puedes agregar el botón de guardar como en versiones anteriores
-
-    except Exception as e:
-        st.error(f"Error al procesar el archivo: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc(), language="python")
+        # Mostrar tabla EXACTA como la imagen
+        columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN', 'PAGOS', 'N°OPERACIÓN']
+        st.dataframe(df_filtrado[columnas_final].fillna(""), use_container_width=True, height=600)
