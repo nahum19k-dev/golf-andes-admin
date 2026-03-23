@@ -9,7 +9,6 @@ st.title("💧 Medidores - Registro de Instalación y Pagos")
 
 tab1, tab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Medidores"])
 
-# ====================== TAB 1: SUBIR Y PROCESAR ======================
 with tab1:
     col1, col2 = st.columns(2)
     with col1:
@@ -18,19 +17,15 @@ with tab1:
     with col2:
         anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
 
-    uploaded_file = st.file_uploader(
-        "Sube el archivo Excel de MEDIDORES",
-        type=["xlsx"]
-    )
+    uploaded_file = st.file_uploader("Sube el archivo Excel de MEDIDORES", type=["xlsx"])
 
     if uploaded_file is not None:
         try:
             # Leer archivo
             df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
 
-            # Limpiar nombres de columnas (quitar espacios, saltos de línea, normalizar)
+            # Limpiar nombres de columnas
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
-            # Mostrar columnas reales para depuración (puedes eliminar después)
             st.write("📋 Columnas detectadas en el archivo:", list(df_raw.columns))
 
             # Función para buscar columna por palabras clave
@@ -44,7 +39,7 @@ with tab1:
             # Mapeo flexible
             col_codigo = find_column(['codigo', 'código'])
             col_edificio = find_column(['edificio', 'torre'])
-            col_dpto = find_column(['dpto', 'departamento', 'dpto'])
+            col_dpto = find_column(['dpto', 'departamento'])
             col_med_inst = find_column(['medidor instalado', 'instalado'])
             col_n_med = find_column(['n° de medidor', 'nº de medidor', 'numero de medidor', 'medidor'])
             col_monto = find_column(['monto a pagar', 'monto', 'pago'])
@@ -64,36 +59,40 @@ with tab1:
             if col_monto:
                 df['monto'] = df_raw[col_monto]
 
-            # Verificar que se hayan encontrado las columnas esenciales
-            if df.empty or 'torre' not in df.columns or 'departamento' not in df.columns:
-                st.error("No se pudieron identificar las columnas necesarias (EDIFICIO/TORRE y DPTO). Verifica los nombres.")
-                st.stop()
+            st.write("Columnas estandarizadas:", list(df.columns))
+            st.write("Filas iniciales:", len(df))
 
-            # ========== FILTRADO ROBUSTO ==========
-            # 1. Código: solo números de 4 o 5 dígitos y sin "TOTAL"
+            # Filtro 1: código (sin TOTAL, solo 4-5 dígitos)
             if 'codigo_raw' in df.columns:
+                df['codigo_raw'] = df['codigo_raw'].str.split('.').str[0]  # quitar decimales
                 df = df[~df['codigo_raw'].str.contains('TOTAL', case=False, na=False)]
                 df = df[df['codigo_raw'].str.match(r'^\d{4,5}$', na=False)]
+                st.write("Después de filtrar código:", len(df))
 
-            # 2. Convertir torre y departamento a numérico
+            # Filtro 2: torre y departamento numéricos > 0
             df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
             df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
             df = df.dropna(subset=['torre', 'departamento'])
             df = df[(df['torre'] > 0) & (df['departamento'] > 0)]
+            st.write("Después de filtrar torre/departamento:", len(df))
 
-            # 3. Medidor instalado = "SI"
+            # Filtro 3: medidor instalado = "SI"
             if 'medidor_instalado' in df.columns:
-                df['medidor_instalado'] = df['medidor_instalado'].str.upper()
+                df['medidor_instalado'] = df['medidor_instalado'].str.upper().str.strip()
                 df = df[df['medidor_instalado'] == 'SI']
+                st.write("Después de filtrar medidor_instalado:", len(df))
 
-            # 4. Número de medidor no vacío
+            # Filtro 4: número de medidor no vacío
             if 'n_medidor' in df.columns:
-                df = df[df['n_medidor'].notna() & (df['n_medidor'].astype(str).str.strip() != '')]
+                df['n_medidor'] = df['n_medidor'].astype(str).str.strip()
+                df = df[df['n_medidor'].notna() & (df['n_medidor'] != '') & (df['n_medidor'] != 'nan')]
+                st.write("Después de filtrar n_medidor:", len(df))
 
-            # 5. Monto numérico > 0
+            # Filtro 5: monto > 0
             if 'monto' in df.columns:
                 df['monto'] = pd.to_numeric(df['monto'], errors='coerce')
                 df = df[df['monto'] > 0]
+                st.write("Después de filtrar monto:", len(df))
 
             if df.empty:
                 st.warning("No se encontraron filas válidas después de los filtros. Revisa el archivo.")
@@ -124,11 +123,10 @@ with tab1:
                 st.error("No se encontró columna de departamento en Propietarios. Columnas: " + ", ".join(prop.columns))
                 st.stop()
 
-            # Asegurar que las columnas de torre y departamento sean numéricas en prop
             prop['torre'] = pd.to_numeric(prop['torre'], errors='coerce')
             prop[depto_col_prop] = pd.to_numeric(prop[depto_col_prop], errors='coerce')
 
-            # Merge usando torre y departamento
+            # Merge
             df_merged = df.merge(
                 prop[['torre', depto_col_prop, 'nombre', 'dni', 'codigo']],
                 left_on=['torre', 'departamento'],
@@ -137,11 +135,9 @@ with tab1:
             )
             df_merged.rename(columns={'codigo': 'codigo_propietario'}, inplace=True)
 
-            # Separar coincidentes y no coincidentes
             df_coinciden = df_merged[df_merged['nombre'].notna()].copy()
             df_no_coinciden = df_merged[df_merged['nombre'].isna()].copy()
 
-            # Ordenar y resetear índice
             df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento'])
             df_coinciden.reset_index(drop=True, inplace=True)
             df_coinciden.index = df_coinciden.index + 1
@@ -167,7 +163,6 @@ with tab1:
                 if col in df_no_coinciden.columns:
                     df_no_coinciden[col] = df_no_coinciden[col].apply(formatear_numero)
 
-            # Mostrar resultados
             st.subheader("✅ Resultado del procesamiento")
 
             if not df_coinciden.empty:
@@ -188,11 +183,7 @@ with tab1:
                         if col in df_guardar.columns:
                             df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce')
                     df_guardar.columns = ['codigo', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']
-                    nombre_hoja = gsheets.guardar_medidor(
-                        df=df_guardar,
-                        mes=mes,
-                        anio=int(anio)
-                    )
+                    nombre_hoja = gsheets.guardar_medidor(df=df_guardar, mes=mes, anio=int(anio))
                     st.success(f"Guardado en hoja: **{nombre_hoja}**")
                 except Exception as e:
                     st.error(f"Error al guardar: {str(e)}")
@@ -200,7 +191,6 @@ with tab1:
         except Exception as e:
             st.error(f"Error al procesar: {str(e)}")
 
-# ====================== TAB 2: VISUALIZAR MEDIDORES ======================
 with tab2:
     st.subheader("📊 Visualizar Medidores Guardados")
 
@@ -252,7 +242,6 @@ with tab2:
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_viz[columnas_existentes].to_excel(writer, index=False, sheet_name=hoja_seleccionada)
             excel_data = output.getvalue()
-
             st.download_button(
                 label="📥 Descargar como Excel",
                 data=excel_data,
