@@ -28,49 +28,69 @@ with tab1:
             # Leer archivo
             df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
 
-            # Limpiar nombres de columnas
+            # Limpiar nombres de columnas (quitar espacios, saltos de línea, normalizar)
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
+            # Mostrar columnas reales para depuración (puedes eliminar después)
+            st.write("📋 Columnas detectadas en el archivo:", list(df_raw.columns))
 
-            # Renombrar columnas a nombres internos
-            renombres = {
-                'CODIGO': 'codigo_raw',
-                'EDIFICIO': 'torre',
-                'DPTO': 'departamento',
-                'MEDIDOR INSTALADO': 'medidor_instalado',
-                'N° DE MEDIDOR': 'n_medidor',
-                'MONTO A PAGAR': 'monto'
-            }
-            for old, new in renombres.items():
-                if old in df_raw.columns:
-                    df_raw.rename(columns={old: new}, inplace=True)
+            # Función para buscar columna por palabras clave
+            def find_column(keywords):
+                for col in df_raw.columns:
+                    col_lower = col.lower()
+                    if any(kw.lower() in col_lower for kw in keywords):
+                        return col
+                return None
 
-            df = df_raw.copy()
+            # Mapeo flexible
+            col_codigo = find_column(['codigo', 'código'])
+            col_edificio = find_column(['edificio', 'torre'])
+            col_dpto = find_column(['dpto', 'departamento', 'dpto'])
+            col_med_inst = find_column(['medidor instalado', 'instalado'])
+            col_n_med = find_column(['n° de medidor', 'nº de medidor', 'numero de medidor', 'medidor'])
+            col_monto = find_column(['monto a pagar', 'monto', 'pago'])
 
-            # ========== FILTRADO ROBUSTO (MÁS ESTRICTO) ==========
-            # 1. Eliminar filas donde la columna 'codigo_raw' contenga "TOTAL" o no sea numérica
+            # Crear DataFrame con nombres estandarizados
+            df = pd.DataFrame()
+            if col_codigo:
+                df['codigo_raw'] = df_raw[col_codigo].astype(str).str.strip()
+            if col_edificio:
+                df['torre'] = df_raw[col_edificio]
+            if col_dpto:
+                df['departamento'] = df_raw[col_dpto]
+            if col_med_inst:
+                df['medidor_instalado'] = df_raw[col_med_inst].astype(str).str.strip()
+            if col_n_med:
+                df['n_medidor'] = df_raw[col_n_med]
+            if col_monto:
+                df['monto'] = df_raw[col_monto]
+
+            # Verificar que se hayan encontrado las columnas esenciales
+            if df.empty or 'torre' not in df.columns or 'departamento' not in df.columns:
+                st.error("No se pudieron identificar las columnas necesarias (EDIFICIO/TORRE y DPTO). Verifica los nombres.")
+                st.stop()
+
+            # ========== FILTRADO ROBUSTO ==========
+            # 1. Código: solo números de 4 o 5 dígitos y sin "TOTAL"
             if 'codigo_raw' in df.columns:
-                df['codigo_raw'] = df['codigo_raw'].astype(str).str.strip()
                 df = df[~df['codigo_raw'].str.contains('TOTAL', case=False, na=False)]
                 df = df[df['codigo_raw'].str.match(r'^\d{4,5}$', na=False)]
 
             # 2. Convertir torre y departamento a numérico
             df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
             df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
-
-            # 3. Eliminar filas donde torre o departamento sean NaN o <= 0
             df = df.dropna(subset=['torre', 'departamento'])
             df = df[(df['torre'] > 0) & (df['departamento'] > 0)]
 
-            # 4. Filtrar solo medidores instalados (columna 'medidor_instalado' debe ser "SI")
+            # 3. Medidor instalado = "SI"
             if 'medidor_instalado' in df.columns:
-                df['medidor_instalado'] = df['medidor_instalado'].astype(str).str.strip().str.upper()
+                df['medidor_instalado'] = df['medidor_instalado'].str.upper()
                 df = df[df['medidor_instalado'] == 'SI']
 
-            # 5. Quitar filas donde 'n_medidor' esté vacío
+            # 4. Número de medidor no vacío
             if 'n_medidor' in df.columns:
                 df = df[df['n_medidor'].notna() & (df['n_medidor'].astype(str).str.strip() != '')]
 
-            # 6. Quitar filas donde 'monto' no sea numérico o sea <= 0
+            # 5. Monto numérico > 0
             if 'monto' in df.columns:
                 df['monto'] = pd.to_numeric(df['monto'], errors='coerce')
                 df = df[df['monto'] > 0]
