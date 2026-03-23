@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import re
 import gsheets
 from datetime import datetime
 
@@ -32,7 +31,7 @@ with tab1:
             # Limpiar nombres de columnas
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
-            # Renombrar columnas a nombres internos (usando nombres exactos que salen del Excel)
+            # Renombrar columnas a nombres internos
             renombres = {
                 'CODIGO': 'codigo_raw',
                 'EDIFICIO': 'torre',
@@ -47,23 +46,28 @@ with tab1:
 
             df = df_raw.copy()
 
-            # --- Filtro inicial: eliminar filas sin torre o departamento (no son medidores válidos)
-            # También eliminar filas que tengan "TOTAL" en la columna de código o descripción
+            # ========== FILTRADO ROBUSTO ==========
+            # 1. Eliminar filas donde la columna 'codigo_raw' contenga "TOTAL"
             if 'codigo_raw' in df.columns:
                 df = df[~df['codigo_raw'].astype(str).str.contains('TOTAL', case=False, na=False)]
-            if 'torre' in df.columns:
-                df = df[df['torre'].notna()]
-            if 'departamento' in df.columns:
-                df = df[df['departamento'].notna()]
 
-            # Si no quedan filas, detener
-            if df.empty:
-                st.warning("No se encontraron filas válidas con torre y departamento. Revisa el archivo.")
-                st.stop()
-
-            # Convertir torre y departamento a números
+            # 2. Convertir torre y departamento a numérico (los no numéricos se convierten en NaN)
             df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
             df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+
+            # 3. Eliminar filas donde torre o departamento sean NaN (no numéricos)
+            df = df.dropna(subset=['torre', 'departamento'])
+
+            # 4. Eliminar filas con torre o departamento <= 0 (valores inválidos)
+            df = df[(df['torre'] > 0) & (df['departamento'] > 0)]
+
+            # Si después de filtrar no quedan filas, mostrar advertencia
+            if df.empty:
+                st.warning("No se encontraron filas válidas con torre y departamento numéricos. Revisa el archivo.")
+                st.stop()
+
+            # Mostrar cantidad de filas válidas (opcional)
+            st.info(f"✅ Filas válidas después de filtrar: {len(df)}")
 
             # Procesar código para 5 dígitos (solo para mostrar)
             if 'codigo_raw' in df.columns:
@@ -86,7 +90,7 @@ with tab1:
                     depto_col_prop = col
                     break
             if depto_col_prop is None:
-                st.error("No se encontró columna de departamento en Propietarios. Las columnas disponibles son: " + ", ".join(prop.columns))
+                st.error("No se encontró columna de departamento en Propietarios. Columnas: " + ", ".join(prop.columns))
                 st.stop()
 
             # Asegurar que las columnas de torre y departamento sean numéricas en prop
@@ -101,7 +105,7 @@ with tab1:
                 how='left'
             )
 
-            # Renombrar la columna de código del propietario para evitar confusión
+            # Renombrar columna de código del propietario para evitar confusión
             df_merged.rename(columns={'codigo': 'codigo_propietario'}, inplace=True)
 
             # Separar coincidentes y no coincidentes
