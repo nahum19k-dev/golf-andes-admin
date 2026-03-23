@@ -174,3 +174,42 @@ def guardar_pagos(df: pd.DataFrame, mes: str, anio: int):
     nueva_hoja.update(datos, value_input_option="RAW")
 
     return nombre_hoja
+    def listar_hojas_pagos():
+    """Devuelve una lista de nombres de hojas que empiezan con 'Pagos'"""
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import streamlit as st
+
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    client = gspread.authorize(creds)
+    sheet_id = st.secrets["sheets"]["spreadsheet_id"]
+    spreadsheet = client.open_by_key(sheet_id)
+    
+    hojas = spreadsheet.worksheets()
+    nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Pagos")]
+    # Ordenar por nombre (los más recientes primero si se desea)
+    nombres.sort(reverse=True)  # por ejemplo, "Pagos Enero 2026 (2)" irá antes que "Pagos Enero 2026"
+    return nombres
+
+def leer_hoja_pagos(nombre_hoja):
+    """Lee una hoja específica y devuelve un DataFrame con los datos"""
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import streamlit as st
+    import pandas as pd
+
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    client = gspread.authorize(creds)
+    sheet_id = st.secrets["sheets"]["spreadsheet_id"]
+    spreadsheet = client.open_by_key(sheet_id)
+    
+    worksheet = spreadsheet.worksheet(nombre_hoja)
+    datos = worksheet.get_all_values()
+    if len(datos) < 2:
+        return pd.DataFrame()
+    headers = datos[0]
+    filas = datos[1:]
+    df = pd.DataFrame(filas, columns=headers)
+    return df
