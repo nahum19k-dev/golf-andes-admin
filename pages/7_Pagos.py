@@ -19,8 +19,6 @@ with tab1:
     with col2:
         anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
 
-    periodo_key = f"{mes.upper()}_{int(anio)}"
-
     uploaded_file = st.file_uploader(
         "Sube el archivo Excel de DATA BANCOS",
         type=["xlsx"]
@@ -111,7 +109,7 @@ with tab1:
                 st.markdown("### Pagos que coincidieron")
                 cols = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'ingresos']
                 if dni_col:
-                    cols.insert(6, dni_col)  # inserta DNI después de nombre
+                    cols.insert(6, dni_col)
                 st.dataframe(df_coinciden[cols].fillna(""), use_container_width=True, height=400)
 
             if not df_no_coinciden.empty:
@@ -119,22 +117,17 @@ with tab1:
                 st.dataframe(df_no_coinciden[['fecha', 'descripcion', 'codigo', 'ingresos']].fillna(""),
                              use_container_width=True, height=300)
 
-            # Botón guardar
+            # Botón guardar (usa la nueva función guardar_pagos)
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
-                    # Verificar que la función existe en gsheets
-                    if not hasattr(gsheets, 'crear_y_guardar_programacion'):
-                        st.error("La función 'crear_y_guardar_programacion' no está definida en gsheets.py. Verifica el archivo.")
-                    else:
-                        nombre_hoja = gsheets.crear_y_guardar_programacion(
-                            df=df_coinciden,
-                            periodo_key=periodo_key,
-                            mes=mes,
-                            anio=int(anio)
-                        )
-                        st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                    nombre_hoja = gsheets.guardar_pagos(
+                        df=df_coinciden,
+                        mes=mes,
+                        anio=int(anio)
+                    )
+                    st.success(f"Guardado en hoja: **{nombre_hoja}**")
                 except Exception as e:
-                    st.error(f"Error al guardar en Google Sheets: {str(e)}")
+                    st.error(f"Error al guardar: {str(e)}")
 
         except Exception as e:
             st.error(f"Error al procesar: {str(e)}")
