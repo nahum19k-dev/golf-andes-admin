@@ -28,15 +28,12 @@ with tab1:
 
     if uploaded_file is not None:
         try:
-            # === LECTURA CORREGIDA (tu Excel tiene headers en fila 1 + columna vacía) ===
+            # === LECTURA DEL EXCEL ===
             df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
 
             # Eliminar columna vacía del principio y limpiar nombres
             df_raw = df_raw.iloc[:, 1:]                    # quita la primera columna NaN/Unnamed
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
-
-            st.success(f"Archivo leído correctamente: {len(df_raw)} filas")
-            st.write("**Columnas detectadas:**", list(df_raw.columns))
 
             # Renombrar columnas clave
             df = df_raw.rename(columns={
@@ -61,9 +58,6 @@ with tab1:
                 st.error("No se pudo cargar Propietarios")
                 st.stop()
 
-            # Mostrar columnas para depuración (opcional, se puede quitar luego)
-            st.write("**Columnas en Propietarios:**", list(prop.columns))
-
             # Detectar columna de departamento
             depto_col = None
             posibles_nombres = ['departamento', 'dpto', 'depto', 'N°DPTO', 'depto_numero']
@@ -78,7 +72,6 @@ with tab1:
             # Detectar columna de código (puede ser 'codigo' o 'codigo_prop' etc.)
             codigo_col = 'codigo'
             if codigo_col not in prop.columns:
-                # buscar alternativa
                 for col in prop.columns:
                     if 'codigo' in col.lower():
                         codigo_col = col
@@ -89,7 +82,6 @@ with tab1:
 
             # Seleccionar columnas necesarias para el merge
             columnas_merge = [codigo_col, 'torre', depto_col, 'nombre']
-            # Añadir DNI si existe
             dni_col = next((c for c in prop.columns if 'dni' in c.lower()), None)
             if dni_col:
                 columnas_merge.append(dni_col)
@@ -130,15 +122,19 @@ with tab1:
             # Botón guardar
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
-                    nombre_hoja = gsheets.crear_y_guardar_programacion(
-                        df=df_coinciden,
-                        periodo_key=periodo_key,
-                        mes=mes,
-                        anio=int(anio)
-                    )
-                    st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                    # Verificar que la función existe en gsheets
+                    if not hasattr(gsheets, 'crear_y_guardar_programacion'):
+                        st.error("La función 'crear_y_guardar_programacion' no está definida en gsheets.py. Verifica el archivo.")
+                    else:
+                        nombre_hoja = gsheets.crear_y_guardar_programacion(
+                            df=df_coinciden,
+                            periodo_key=periodo_key,
+                            mes=mes,
+                            anio=int(anio)
+                        )
+                        st.success(f"Guardado en hoja: **{nombre_hoja}**")
                 except Exception as e:
-                    st.error(f"Error al guardar: {str(e)}")
+                    st.error(f"Error al guardar en Google Sheets: {str(e)}")
 
         except Exception as e:
             st.error(f"Error al procesar: {str(e)}")
@@ -147,8 +143,7 @@ with tab1:
 with tab2:
     st.subheader("📊 Visualizar Pagos Ordenados")
 
-    # Cargar datos guardados de la sesión o desde Sheets (opcional)
-    # Aquí se puede ampliar para leer directamente de Sheets
+    # Si ya se procesó un archivo, usar df_coinciden
     if 'df_coinciden' in locals() and not df_coinciden.empty:
         df_viz = df_coinciden.copy()
         df_viz = df_viz.rename(columns={
