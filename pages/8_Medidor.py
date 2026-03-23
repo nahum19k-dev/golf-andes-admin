@@ -33,7 +33,7 @@ with tab1:
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
             # Eliminar fila de total (si existe)
-            # Buscar en la columna de MONTO A PAGAR si la última fila contiene "SUM" o "="
+            # Buscar la columna que contiene "MONTO"
             col_monto = next((c for c in df_raw.columns if 'MONTO' in c.upper()), None)
             if col_monto:
                 last_val = str(df_raw[col_monto].iloc[-1])
@@ -106,6 +106,26 @@ with tab1:
             # Ordenar
             df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento'])
 
+            # Función para formatear números sin .0
+            def formatear_numero(valor):
+                try:
+                    if pd.isna(valor):
+                        return ""
+                    num = float(valor)
+                    if num.is_integer():
+                        return str(int(num))
+                    else:
+                        return str(num)
+                except (ValueError, TypeError):
+                    return str(valor)
+
+            # Aplicar formateo a columnas numéricas antes de mostrar
+            for col in ['codigo_5d', 'torre', 'departamento', 'n_medidor', 'monto']:
+                if col in df_coinciden.columns:
+                    df_coinciden[col] = df_coinciden[col].apply(formatear_numero)
+                if col in df_no_coinciden.columns:
+                    df_no_coinciden[col] = df_no_coinciden[col].apply(formatear_numero)
+
             # Mostrar resultados
             st.subheader("✅ Resultado del procesamiento")
 
@@ -122,8 +142,12 @@ with tab1:
             # Botón guardar
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
-                    # Preparar DataFrame para guardar
+                    # Preparar DataFrame para guardar (deshacer el formateo para guardar como números)
                     df_guardar = df_coinciden[['codigo_5d', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']].copy()
+                    # Reconvertir a numérico para guardar
+                    for col in ['codigo_5d', 'torre', 'departamento', 'n_medidor', 'monto']:
+                        if col in df_guardar.columns:
+                            df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce')
                     df_guardar.columns = ['codigo', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']
                     nombre_hoja = gsheets.guardar_medidor(
                         df=df_guardar,
@@ -152,6 +176,24 @@ with tab2:
         df_guardado = gsheets.leer_hoja_medidor(hoja_seleccionada)
 
         if not df_guardado.empty:
+            # Función de formateo (misma que arriba)
+            def formatear_numero(valor):
+                try:
+                    if pd.isna(valor):
+                        return ""
+                    num = float(valor)
+                    if num.is_integer():
+                        return str(int(num))
+                    else:
+                        return str(num)
+                except (ValueError, TypeError):
+                    return str(valor)
+
+            # Aplicar formateo a las columnas numéricas antes de mostrar
+            for col in ['codigo', 'torre', 'departamento', 'n_medidor', 'monto']:
+                if col in df_guardado.columns:
+                    df_guardado[col] = df_guardado[col].apply(formatear_numero)
+
             # Renombrar columnas para visualización amigable
             mapeo = {
                 'codigo': 'CÓDIGO',
@@ -170,7 +212,7 @@ with tab2:
             columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
             st.dataframe(df_viz[columnas_existentes].fillna(""), use_container_width=True, height=600)
 
-            # Botón de descarga
+            # Botón de descarga (el archivo descargado conservará el formateo como texto)
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
