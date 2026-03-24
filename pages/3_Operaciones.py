@@ -240,7 +240,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS
-            html += '<tr>'
+            html += '苦'
             # Celdas antes de PROGRAMACION
             for i in range(prog_first):
                 html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
@@ -255,7 +255,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             html += '</tr>'
 
             # Segunda fila: nombres de columnas
-            html += '<tr>'
+            html += '苦'
             for col in col_names:
                 html += f'<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6; text-align: left;">{col}</th>'
             html += '</tr>'
@@ -263,7 +263,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             # Filas de datos
             for _, row in df_final.iterrows():
-                html += '<tr>'
+                html += '苦'
                 for col in col_names:
                     val = row[col]
                     # Alineación derecha para números
