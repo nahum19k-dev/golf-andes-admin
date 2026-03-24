@@ -280,3 +280,155 @@ def leer_hoja_deuda(nombre_hoja):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     return df
+# ====================== FUNCIONES PARA OPERACIONES ======================
+def leer_programacion(mes: str, anio: int):
+    """Lee la hoja de programación (determinación de cuotas) para el mes y año dados.
+    Retorna DataFrame con columnas: torre, departamento, total_programacion (columna que se detecta automáticamente)"""
+    nombre_hoja = f"Prog_{mes.upper()}_{anio}"
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet(nombre_hoja)
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
+    datos = worksheet.get_all_values()
+    if len(datos) < 4:  # hay título, fila vacía, encabezados, datos
+        return pd.DataFrame()
+    headers = datos[3]  # después del título y fila vacía
+    filas = datos[4:]
+    df = pd.DataFrame(filas, columns=headers)
+    # Limpiar nombres de columnas
+    df.columns = df.columns.str.strip().str.replace('\n', ' ')
+    # Buscar la columna que contiene el monto total a pagar
+    col_monto = None
+    for col in df.columns:
+        if 'total' in col.lower() or 'cuota' in col.lower() or 'pagar' in col.lower():
+            col_monto = col
+            break
+    if col_monto is None:
+        return pd.DataFrame()
+    # Renombrar columnas clave
+    rename_map = {}
+    for col in df.columns:
+        if 'torre' in col.lower():
+            rename_map[col] = 'torre'
+        elif 'departamento' in col.lower() or 'dpto' in col.lower():
+            rename_map[col] = 'departamento'
+        elif col == col_monto:
+            rename_map[col] = 'total_programacion'
+    df = df.rename(columns=rename_map)
+    # Convertir a numérico
+    if 'total_programacion' in df.columns:
+        df['total_programacion'] = pd.to_numeric(df['total_programacion'], errors='coerce')
+    if 'torre' in df.columns:
+        df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+    if 'departamento' in df.columns:
+        df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+    return df
+
+def leer_amortizacion(mes: str, anio: int):
+    """Lee la hoja de amortización para el mes y año dados."""
+    nombre_hoja = f"Amortización {mes} {anio}"
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet(nombre_hoja)
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
+    datos = worksheet.get_all_values()
+    if len(datos) < 2:
+        return pd.DataFrame()
+    headers = datos[0]
+    filas = datos[1:]
+    df = pd.DataFrame(filas, columns=headers)
+    # Limpiar nombres
+    df.columns = df.columns.str.strip().str.replace('\n', ' ')
+    # Renombrar columnas
+    rename_map = {}
+    for col in df.columns:
+        if 'torre' in col.lower():
+            rename_map[col] = 'torre'
+        elif 'dpto' in col.lower() or 'departamento' in col.lower():
+            rename_map[col] = 'departamento'
+        elif 'amortizacion' in col.lower():
+            rename_map[col] = 'amortizacion'
+    df = df.rename(columns=rename_map)
+    if 'torre' in df.columns:
+        df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+    if 'departamento' in df.columns:
+        df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+    if 'amortizacion' in df.columns:
+        df['amortizacion'] = pd.to_numeric(df['amortizacion'], errors='coerce')
+    return df
+
+def leer_medidores(mes: str, anio: int):
+    """Lee la hoja de medidores para el mes y año dados."""
+    nombre_hoja = f"Medidor {mes} {anio}"
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet(nombre_hoja)
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
+    datos = worksheet.get_all_values()
+    if len(datos) < 2:
+        return pd.DataFrame()
+    headers = datos[0]
+    filas = datos[1:]
+    df = pd.DataFrame(filas, columns=headers)
+    df.columns = df.columns.str.strip().str.replace('\n', ' ')
+    # Renombrar
+    rename_map = {}
+    for col in df.columns:
+        if 'torre' in col.lower():
+            rename_map[col] = 'torre'
+        elif 'departamento' in col.lower():
+            rename_map[col] = 'departamento'
+        elif 'monto' in col.lower():
+            rename_map[col] = 'monto'
+    df = df.rename(columns=rename_map)
+    if 'torre' in df.columns:
+        df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+    if 'departamento' in df.columns:
+        df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+    if 'monto' in df.columns:
+        df['monto'] = pd.to_numeric(df['monto'], errors='coerce')
+    return df
+
+def leer_pagos_mes(mes: str, anio: int):
+    """Lee la hoja de pagos para el mes y año dados y devuelve cada transacción individual."""
+    nombre_hoja = f"Pagos {mes} {anio}"
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet(nombre_hoja)
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
+    datos = worksheet.get_all_values()
+    if len(datos) < 2:
+        return pd.DataFrame()
+    headers = datos[0]
+    filas = datos[1:]
+    df = pd.DataFrame(filas, columns=headers)
+    df.columns = df.columns.str.strip().str.replace('\n', ' ')
+    # Renombrar columnas clave
+    rename_map = {}
+    for col in df.columns:
+        if 'fecha' in col.lower():
+            rename_map[col] = 'fecha'
+        elif 'torre' in col.lower():
+            rename_map[col] = 'torre'
+        elif 'departamento' in col.lower() or 'dpto' in col.lower():
+            rename_map[col] = 'departamento'
+        elif 'ingresos' in col.lower() or 'pagos' in col.lower():
+            rename_map[col] = 'ingresos'
+        elif 'n_operacion' in col.lower() or 'operación' in col.lower():
+            rename_map[col] = 'n_operacion'
+    df = df.rename(columns=rename_map)
+    if 'fecha' in df.columns:
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+    if 'torre' in df.columns:
+        df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+    if 'departamento' in df.columns:
+        df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+    if 'ingresos' in df.columns:
+        df['ingresos'] = pd.to_numeric(df['ingresos'], errors='coerce')
+    # Ordenar por fecha
+    df = df.sort_values('fecha')
+    return df
