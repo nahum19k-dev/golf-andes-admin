@@ -246,25 +246,18 @@ with tab2:
             st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
 
        # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
-   # Dentro del bloque with subtab2 (visualizar programación)
 with subtab2:
     st.subheader("Programaciones Guardadas")
-
     try:
         hojas_prog = gsheets.listar_hojas_programacion()
     except Exception as e:
         st.error(f"No se pudo conectar con Google Sheets: {e}")
         hojas_prog = []
-
     if hojas_prog:
-        hoja_seleccionada = st.selectbox("Selecciona el período de programación:", hojas_prog)
+        hoja_seleccionada = st.selectbox("Selecciona la programación:", hojas_prog)
         df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
-
         if not df_guardado.empty:
-            # Asegurar que no haya columnas duplicadas
-            df_guardado = df_guardado.loc[:, ~df_guardado.columns.duplicated()]
-
-            # Formatear números
+            # Función para formatear números sin .0
             def formatear_numero(valor):
                 try:
                     if pd.isna(valor):
@@ -276,24 +269,25 @@ with subtab2:
                         return str(num)
                 except (ValueError, TypeError):
                     return str(valor)
-
+            # Aplicar formateo
             for col in ['torre', 'departamento', 'Mantenimiento']:
                 if col in df_guardado.columns:
                     df_guardado[col] = df_guardado[col].apply(formatear_numero)
-
-            # Mostrar solo columnas relevantes (si existen)
-            columnas_mostrar = ['torre', 'departamento', 'Mantenimiento']
-            columnas_existentes = [c for c in columnas_mostrar if c in df_guardado.columns]
-            if columnas_existentes:
-                st.dataframe(df_guardado[columnas_existentes].fillna(""), use_container_width=True, height=600)
-            else:
-                st.dataframe(df_guardado.fillna(""), use_container_width=True, height=600)
-
-            # Botón de descarga
+            # Renombrar para mostrar
+            df_viz = df_guardado.rename(columns={
+                'torre': 'TORRE',
+                'departamento': 'N°DPTO',
+                'Mantenimiento': 'MANTENIMIENTO (S/)'
+            })
+            # Índice desde 1
+            df_viz = df_viz.reset_index(drop=True)
+            df_viz.index = df_viz.index + 1
+            st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
+            # Descarga
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_guardado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                df_viz.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
             excel_data = output.getvalue()
             st.download_button(
                 label="📥 Descargar como Excel",
@@ -302,6 +296,6 @@ with subtab2:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.info("La hoja seleccionada está vacía.")
+            st.info("La hoja seleccionada está vacía o no tiene el formato esperado.")
     else:
-        st.info("No hay hojas de programación guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+        st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
