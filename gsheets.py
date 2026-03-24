@@ -468,33 +468,41 @@ def listar_hojas_programacion():
     return nombres
 
 def leer_hoja_programacion(nombre_hoja):
-    """
-    Lee una hoja de programación (creada con crear_y_guardar_programacion)
-    y devuelve DataFrame con columnas: torre, departamento, Mantenimiento.
-    """
     spreadsheet = get_spreadsheet()
     worksheet = spreadsheet.worksheet(nombre_hoja)
     datos = worksheet.get_all_values()
+    st.write(f"Total filas en la hoja: {len(datos)}")  # DEPURACIÓN
     if len(datos) < 4:
+        st.warning(f"Menos de 4 filas: {len(datos)}")
         return pd.DataFrame()
-    # encabezados en fila 3 (índice 2), datos desde fila 4 (índice 3)
+    # Mostrar primeras 5 filas para depuración
+    st.write("Primeras 5 filas (sin procesar):")
+    for i, row in enumerate(datos[:5]):
+        st.write(f"Fila {i}: {row}")
+    # Usar fila 2 como encabezados (índice 2, tercera fila real)
     headers = datos[2]
     filas = datos[3:]
+    st.write(f"Encabezados (fila 2): {headers}")
+    st.write(f"Número de filas de datos: {len(filas)}")
+    if not filas:
+        return pd.DataFrame()
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-    # Buscar columna de total y renombrar a "Mantenimiento"
+    st.write("Columnas después de limpiar:", df.columns.tolist())
+    # Buscar columna de total
     col_total = None
     for col in df.columns:
         if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
             col_total = col
             break
+    st.write(f"Columna total encontrada: {col_total}")
     if col_total is None:
         return pd.DataFrame()
     if col_total != 'Mantenimiento':
         if 'Mantenimiento' in df.columns:
             df = df.drop(columns=['Mantenimiento'])
         df.rename(columns={col_total: 'Mantenimiento'}, inplace=True)
-    # Buscar columnas de torre y departamento
+    # Buscar torre y departamento
     col_torre = None
     col_dpto = None
     for col in df.columns:
@@ -503,16 +511,15 @@ def leer_hoja_programacion(nombre_hoja):
             col_torre = col
         elif 'departamento' in col_low or 'dpto' in col_low:
             col_dpto = col
+    st.write(f"Columna torre: {col_torre}, columna dpto: {col_dpto}")
     if col_torre is None or col_dpto is None:
+        st.warning("No se encontraron columnas de torre o departamento")
         return pd.DataFrame()
-    # Seleccionar solo las columnas necesarias
     df_out = df[[col_torre, col_dpto, 'Mantenimiento']].copy()
     df_out.columns = ['torre', 'departamento', 'Mantenimiento']
-    # Convertir a numérico
     for col in ['torre', 'departamento', 'Mantenimiento']:
         df_out[col] = pd.to_numeric(df_out[col], errors='coerce')
-    # Eliminar filas con valores nulos en torre o departamento
     df_out = df_out.dropna(subset=['torre', 'departamento'])
-    # Eliminar columnas duplicadas por si acaso
-    df_out = df_out.loc[:, ~df_out.columns.duplicated()]
+    st.write(f"DataFrame final shape: {df_out.shape}")
+    st.write(df_out.head())
     return df_out
