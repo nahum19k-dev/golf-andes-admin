@@ -33,8 +33,7 @@ with tab1:
             df_raw = df_raw.iloc[:, 1:]                    # quita la primera columna NaN/Unnamed
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
-            # Renombrar columnas clave (nombres exactos que aparecen en el nuevo Excel)
-            # Usamos un mapeo que busca nombres, no solo renombrar fijo
+            # Mapeo flexible de columnas
             rename_map = {}
             for col in df_raw.columns:
                 col_low = col.lower()
@@ -51,19 +50,19 @@ with tab1:
                 elif 'medidor' in col_low:
                     rename_map[col] = 'medidor'
 
-            # Si no se encontró alguna columna clave, usar las que están en el archivo
             df = df_raw.rename(columns=rename_map)
 
-            # Asegurar que existan las columnas necesarias
-            if 'mantenimiento' not in df.columns:
-                df['mantenimiento'] = 0
-            if 'amortizacion' not in df.columns:
-                df['amortizacion'] = 0
-            if 'medidor' not in df.columns:
-                df['medidor'] = 0
+            # Asegurar que existan las columnas de conceptos
+            for col in ['mantenimiento', 'amortizacion', 'medidor']:
+                if col not in df.columns:
+                    df[col] = 0
+
+            # Convertir a números, reemplazar vacíos por 0
+            for col in ['mantenimiento', 'amortizacion', 'medidor']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
             # Calcular monto total como suma de los tres conceptos
-            df['ingresos'] = df['mantenimiento'].fillna(0) + df['amortizacion'].fillna(0) + df['medidor'].fillna(0)
+            df['ingresos'] = df['mantenimiento'] + df['amortizacion'] + df['medidor']
 
             # Extraer código (últimos 5 dígitos) desde la descripción
             def extraer_codigo(desc):
@@ -131,15 +130,15 @@ with tab1:
 
             if not df_coinciden.empty:
                 st.markdown("### Pagos que coincidieron")
-                # Seleccionar columnas a mostrar
                 cols_mostrar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'mantenimiento', 'amortizacion', 'medidor', 'ingresos']
                 if dni_col:
-                    cols_mostrar.insert(6, dni_col)  # insertar DNI después de nombre
-                # Formatear números para mostrar
+                    cols_mostrar.insert(6, dni_col)
+                # Formatear números para mostrar con dos decimales
+                df_mostrar = df_coinciden[cols_mostrar].copy()
                 for col in ['mantenimiento', 'amortizacion', 'medidor', 'ingresos']:
-                    if col in df_coinciden.columns:
-                        df_coinciden[col] = df_coinciden[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
-                st.dataframe(df_coinciden[cols_mostrar].fillna(""), use_container_width=True, height=400)
+                    if col in df_mostrar.columns:
+                        df_mostrar[col] = df_mostrar[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
+                st.dataframe(df_mostrar.fillna(""), use_container_width=True, height=400)
 
             if not df_no_coinciden.empty:
                 st.markdown("### Pagos sin coincidencia (revisar)")
@@ -149,18 +148,19 @@ with tab1:
             # Botón guardar
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
-                    # Seleccionar columnas a guardar (sin los totales calculados redundantes)
+                    # Seleccionar columnas a guardar
                     columnas_guardar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'dni', 'mantenimiento', 'amortizacion', 'medidor', 'n_operacion']
-                    # Solo las que existen
                     cols_existentes = [c for c in columnas_guardar if c in df_coinciden.columns]
                     df_guardar = df_coinciden[cols_existentes].copy()
-                    # Convertir fechas a string si es datetime
+                    # Convertir fechas a string
                     if 'fecha' in df_guardar.columns:
                         df_guardar['fecha'] = pd.to_datetime(df_guardar['fecha']).dt.strftime('%Y-%m-%d')
-                    # Convertir números a string (para evitar problemas)
+                    # Asegurar que las columnas numéricas sean números (no strings)
                     for col in ['mantenimiento', 'amortizacion', 'medidor']:
                         if col in df_guardar.columns:
-                            df_guardar[col] = df_guardar[col].apply(lambda x: f"{float(x):.2f}" if pd.notna(x) else "")
+                            df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce').fillna(0)
+                    # Limpiar valores nulos
+                    df_guardar = df_guardar.fillna("")
                     nombre_hoja = gsheets.guardar_pagos(
                         df=df_guardar,
                         mes=mes,
@@ -225,10 +225,11 @@ with tab2:
             else:
                 df_filtrado = df_viz.copy()
 
-            # Formateo de columnas
+            # Formateo de fechas
             if 'FECHA' in df_filtrado.columns and not df_filtrado['FECHA'].isna().all():
                 df_filtrado['FECHA'] = df_filtrado['FECHA'].dt.strftime('%Y-%m-%d')
 
+            # Función para formatear números sin decimales si son enteros
             def formatear_numero(valor):
                 try:
                     if pd.isna(valor):
@@ -241,6 +242,7 @@ with tab2:
                 except (ValueError, TypeError):
                     return str(valor)
 
+            # Aplicar formateo a columnas numéricas
             for col in ['TORRE', 'N°DPTO', 'PAGOS', 'N°OPERACIÓN', 'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR']:
                 if col in df_filtrado.columns:
                     df_filtrado[col] = df_filtrado[col].apply(formatear_numero)
