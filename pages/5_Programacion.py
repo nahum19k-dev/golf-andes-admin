@@ -253,44 +253,59 @@ with tab2:
         elif df_amort is not None and df_amort.empty:
             st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
 
-    # ---------- SUBTAB 2: VISUALIZAR AMORTIZACIÓN ----------
+        # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
     with subtab2:
-        st.subheader("Amortizaciones Guardadas")
+        st.subheader("Programaciones Guardadas")
 
         try:
-            hojas_amort = gsheets.listar_hojas_amortizacion()
+            hojas_prog = gsheets.listar_hojas_programacion()
         except Exception as e:
             st.error(f"No se pudo conectar con Google Sheets: {e}")
-            hojas_amort = []
+            hojas_prog = []
 
-        if hojas_amort:
-            hoja_seleccionada = st.selectbox("Selecciona el período de amortización:", hojas_amort)
-            df_guardado = gsheets.leer_hoja_amortizacion(hoja_seleccionada)
+        if hojas_prog:
+            hoja_seleccionada = st.selectbox("Selecciona la programación:", hojas_prog)
+            df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
 
             if not df_guardado.empty:
+                # Función para formatear números con dos decimales
                 def formatear_numero(valor):
-    try:
-        if pd.isna(valor):
-            return ""
-        num = float(valor)
-        # Redondear a 2 decimales y formatear con separador de miles
-        return f"S/ {num:,.2f}".replace('.00', '')
-    except (ValueError, TypeError):
-        return str(valor)
+                    try:
+                        if pd.isna(valor):
+                            return ""
+                        num = float(valor)
+                        if num.is_integer():
+                            return str(int(num))
+                        else:
+                            return f"{num:.2f}"
+                    except (ValueError, TypeError):
+                        return str(valor)
 
-                for col in ['TORRE', 'N°DPTO', 'CODIGO', 'AMORTIZACION CONVENIO']:
+                for col in ['torre', 'departamento', 'Mantenimiento']:
                     if col in df_guardado.columns:
                         df_guardado[col] = df_guardado[col].apply(formatear_numero)
 
-                df_guardado = df_guardado.reset_index(drop=True)
-                df_guardado.index = df_guardado.index + 1
+                # Renombrar columnas para visualización amigable
+                mapeo = {
+                    'torre': 'TORRE',
+                    'departamento': 'N°DPTO',
+                    'Mantenimiento': 'MANTENIMIENTO (S/)'
+                }
+                df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
+                # Eliminar columnas duplicadas por si acaso
+                df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
 
-                st.dataframe(df_guardado.fillna(""), use_container_width=True, height=600)
+                # Índice empezando en 1
+                df_viz = df_viz.reset_index(drop=True)
+                df_viz.index = df_viz.index + 1
 
+                st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
+
+                # Botón de descarga
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_guardado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                    df_viz.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
                 excel_data = output.getvalue()
                 st.download_button(
                     label="📥 Descargar como Excel",
@@ -301,4 +316,4 @@ with tab2:
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
-            st.info("No hay hojas de amortización guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+            st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
