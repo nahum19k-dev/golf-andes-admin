@@ -109,24 +109,18 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 med_df = med_df[['torre', 'departamento', 'monto']].copy()
                 med_df['monto'] = med_df['monto'].fillna(0)
 
-            # ========== PAGOS (con conceptos) ==========
-            # Usamos la función que devuelve fecha, torre, departamento, ingresos, n_operacion, mantenimiento, amortizacion, medidor
-            # Para ello necesitamos modificar la función leer_pagos_mes en gsheets.py para que devuelva esos campos.
-            # Por ahora, si no está disponible, usaremos la versión básica.
+            # ========== PAGOS ==========
             pagos_df = gsheets.leer_pagos_mes(mes, anio)
             if pagos_df.empty:
                 st.warning(f"No se encontraron pagos para {mes} {anio}.")
-                pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'ingresos', 'n_operacion',
+                pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                                  'mantenimiento', 'amortizacion', 'medidor'])
             else:
-                # Asegurar que las columnas de conceptos existan
-                for col in ['mantenimiento', 'amortizacion', 'medidor']:
-                    if col not in pagos_df.columns:
-                        pagos_df[col] = 0
                 for col in ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
                     if col in pagos_df.columns:
                         pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce').fillna(0)
-                pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']].copy()
+                pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
+                                     'mantenimiento', 'amortizacion', 'medidor']].copy()
                 pagos_df = pagos_df.sort_values('fecha')
 
             # ========== UNIR TABLAS ==========
