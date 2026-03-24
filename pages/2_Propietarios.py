@@ -80,10 +80,24 @@ with tab2:
                 # Quitar filas sin torre o departamento
                 df = df.dropna(subset=['TORRE', 'N°DPTO'])
 
+                # Calcular total de la deuda
+                col_deuda = 'DEUDA AL 31/12/2025'
+                if col_deuda in df.columns:
+                    # Convertir a numérico, manejar errores
+                    deuda_numeric = pd.to_numeric(df[col_deuda], errors='coerce')
+                    total_deuda = deuda_numeric.sum()
+                    total_formateado = f"S/ {total_deuda:,.2f}" if not pd.isna(total_deuda) else "S/ 0.00"
+                else:
+                    total_formateado = "No disponible"
+
                 # Vista previa con índice desde 1
                 df_vista = df.reset_index(drop=True)
                 df_vista.index = df_vista.index + 1
                 st.success(f"Archivo leído: {len(df)} filas válidas")
+                
+                # Mostrar total de deuda
+                st.metric("💰 Total Deuda", total_formateado)
+                
                 st.write("Vista previa (primeras 10 filas):")
                 st.dataframe(df_vista.head(10), use_container_width=True)
 
@@ -110,6 +124,15 @@ with tab2:
             df_deuda = gsheets.leer_hoja_deuda(hoja_seleccionada)
 
             if not df_deuda.empty:
+                # Asegurar que la columna de deuda sea numérica
+                col_deuda = 'DEUDA AL 31/12/2025'
+                if col_deuda in df_deuda.columns:
+                    deuda_numeric = pd.to_numeric(df_deuda[col_deuda], errors='coerce')
+                    total_deuda = deuda_numeric.sum()
+                    total_formateado = f"S/ {total_deuda:,.2f}" if not pd.isna(total_deuda) else "S/ 0.00"
+                else:
+                    total_formateado = "No disponible"
+
                 # Formatear números (eliminar .0)
                 def formatear_numero(valor):
                     try:
@@ -123,14 +146,19 @@ with tab2:
                     except (ValueError, TypeError):
                         return str(valor)
 
-                for col in ['TORRE', 'N°DPTO', 'CODIGO', 'DEUDA AL 31/12/2025']:
+                for col in ['TORRE', 'N°DPTO', 'CODIGO']:
                     if col in df_deuda.columns:
                         df_deuda[col] = df_deuda[col].apply(formatear_numero)
+                if col_deuda in df_deuda.columns:
+                    df_deuda[col_deuda] = deuda_numeric.apply(formatear_numero)
 
                 # Índice empezando en 1
                 df_deuda = df_deuda.reset_index(drop=True)
                 df_deuda.index = df_deuda.index + 1
 
+                # Mostrar total de deuda
+                st.metric("💰 Total Deuda", total_formateado)
+                
                 st.dataframe(df_deuda.fillna(""), use_container_width=True, height=600)
 
                 # Descarga a Excel
