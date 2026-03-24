@@ -470,12 +470,37 @@ def leer_hoja_deuda(nombre_hoja):
     return df
 # ====================== FUNCIONES PARA VISUALIZAR PROGRAMACIÓN ======================
 # Dentro de gsheets.py, al final, añade:
-def listar_hojas_programacion():
+def leer_hoja_programacion(nombre_hoja):
     spreadsheet = get_spreadsheet()
-    hojas = spreadsheet.worksheets()
-    nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Prog_")]
-    nombres.sort(reverse=True)
-    return nombres
+    worksheet = spreadsheet.worksheet(nombre_hoja)
+    datos = worksheet.get_all_values()
+    if len(datos) < 3:
+        return pd.DataFrame()
+    # Los encabezados están en la tercera fila (índice 2)
+    headers = datos[2]   # fila 2 (A3) -> encabezados
+    filas = datos[3:]    # desde la cuarta fila (A4) -> datos
+    if not filas:
+        return pd.DataFrame()
+    df = pd.DataFrame(filas, columns=headers)
+    df.columns = df.columns.str.strip().str.replace('\n', ' ')
+    # Buscar columna de total y renombrar a "Mantenimiento"
+    col_total = None
+    for col in df.columns:
+        if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
+            col_total = col
+            break
+    if col_total and col_total != 'Mantenimiento':
+        # Evitar duplicados
+        if 'Mantenimiento' in df.columns:
+            df = df.drop(columns=['Mantenimiento'])
+        df.rename(columns={col_total: 'Mantenimiento'}, inplace=True)
+    # Convertir columnas numéricas
+    for col in ['torre', 'departamento', 'Mantenimiento']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    # Eliminar columnas duplicadas (por si acaso)
+    df = df.loc[:, ~df.columns.duplicated()]
+    return df
 
 # En gsheets.py, reemplazar leer_hoja_programacion por:
 def leer_hoja_programacion(nombre_hoja):
@@ -526,3 +551,9 @@ def leer_hoja_programacion(nombre_hoja):
     # Eliminar duplicados de columnas por si acaso
     df_out = df_out.loc[:, ~df_out.columns.duplicated()]
     return df_out
+def listar_hojas_programacion():
+    spreadsheet = get_spreadsheet()
+    hojas = spreadsheet.worksheets()
+    nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Prog_")]
+    nombres.sort(reverse=True)
+    return nombres
