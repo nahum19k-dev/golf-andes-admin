@@ -54,7 +54,7 @@ def subir_excel_a_sheets(ruta_excel):
     )
     return len(df)
 
-# ------------------- Programación (Determinación de cuotas) -------------------
+# ------------------- Programación -------------------
 def existe_programacion(periodo_key: str) -> bool:
     nombre_hoja = f"Prog_{periodo_key.upper()}"
     spreadsheet = get_spreadsheet()
@@ -133,41 +133,29 @@ def listar_hojas_pagos():
     nombres.sort(reverse=True)
     return nombres
 
-# ========== FUNCIÓN CORREGIDA DE LECTURA DE PAGOS ==========
 def leer_pagos_mes(mes: str, anio: int):
     """
     Lee la hoja de pagos y devuelve fecha, torre, departamento, n_operacion,
-    mantenimiento, amortizacion, medidor y el total pagado (ingresos = suma de los tres).
+    mantenimiento, amortizacion, medidor e ingresos (suma de los tres conceptos).
     """
     nombre_base = f"Pagos {mes} {anio}"
-    st.info(f"🔍 Buscando hoja: **{nombre_base}**")
-
     spreadsheet = get_spreadsheet()
     hojas = spreadsheet.worksheets()
     nombres_hojas = [hoja.title for hoja in hojas]
-    st.info(f"📑 Hojas disponibles: {nombres_hojas}")
-
     coincidencias = [h for h in nombres_hojas if h.startswith(nombre_base)]
     if not coincidencias:
-        st.error(f"No se encontró ninguna hoja que empiece con '{nombre_base}'")
         return pd.DataFrame()
-
     nombre_hoja = coincidencias[0]
-    st.success(f"✅ Usando hoja: **{nombre_hoja}**")
-
     worksheet = spreadsheet.worksheet(nombre_hoja)
     datos = worksheet.get_all_values()
     if len(datos) < 2:
-        st.warning(f"La hoja {nombre_hoja} tiene menos de 2 filas")
         return pd.DataFrame()
-
     headers = datos[0]
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-    st.write("📋 Columnas en la hoja de pagos:", list(df.columns))
 
-    # Buscar las columnas necesarias (insensible a mayúsculas)
+    # Mapeo flexible
     col_fecha = next((c for c in df.columns if 'fecha' in c.lower()), None)
     col_torre = next((c for c in df.columns if 'torre' in c.lower()), None)
     col_dpto = next((c for c in df.columns if 'dpto' in c.lower() or 'departamento' in c.lower()), None)
@@ -176,18 +164,7 @@ def leer_pagos_mes(mes: str, anio: int):
     col_amort = next((c for c in df.columns if 'amortizacion' in c.lower()), None)
     col_med = next((c for c in df.columns if 'medidor' in c.lower()), None)
 
-    st.write("🔎 Columnas detectadas:")
-    st.write(f"  fecha: {col_fecha}")
-    st.write(f"  torre: {col_torre}")
-    st.write(f"  departamento: {col_dpto}")
-    st.write(f"  n_operacion: {col_oper}")
-    st.write(f"  mantenimiento: {col_mant}")
-    st.write(f"  amortizacion: {col_amort}")
-    st.write(f"  medidor: {col_med}")
-
-    # Validar columnas esenciales
     if not (col_fecha and col_torre and col_dpto):
-        st.error("Faltan columnas esenciales (fecha, torre, departamento)")
         return pd.DataFrame()
 
     df_out = pd.DataFrame()
@@ -195,18 +172,12 @@ def leer_pagos_mes(mes: str, anio: int):
     df_out['torre'] = pd.to_numeric(df[col_torre], errors='coerce')
     df_out['departamento'] = pd.to_numeric(df[col_dpto], errors='coerce')
     df_out['n_operacion'] = df[col_oper].astype(str) if col_oper else ''
-
-    # Convertir conceptos a numérico, con 0 si no existen o son inválidos
     df_out['mantenimiento'] = pd.to_numeric(df[col_mant], errors='coerce').fillna(0) if col_mant else 0
     df_out['amortizacion'] = pd.to_numeric(df[col_amort], errors='coerce').fillna(0) if col_amort else 0
     df_out['medidor'] = pd.to_numeric(df[col_med], errors='coerce').fillna(0) if col_med else 0
-
-    # Calcular el total pagado (ingresos) como suma de los tres conceptos
     df_out['ingresos'] = df_out['mantenimiento'] + df_out['amortizacion'] + df_out['medidor']
 
     df_out = df_out.sort_values('fecha')
-    st.success(f"✅ Se cargaron {len(df_out)} filas de pagos")
-    st.dataframe(df_out.head(10))
     return df_out
 
 # ------------------- Medidores -------------------
