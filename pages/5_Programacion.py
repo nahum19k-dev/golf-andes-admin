@@ -11,6 +11,39 @@ st.title("📅 Programación Mensual - Subir desde Excel")
 tab1, tab2 = st.tabs(["📊 Programación Mantenimiento", "💰 Amortización"])
 
 # ====================== TAB 1: PROGRAMACIÓN MANTENIMIENTO ======================
+with tab1:
+    # Sub‑pestañas dentro de Programación Mantenimiento
+    subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Programación"])
+
+    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
+    with subtab1:
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col1:
+            mes = st.selectbox(
+                "Mes a programar",
+                ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                 "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"]
+            )
+        with col2:
+            anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
+        with col3:
+            n_deptos = st.number_input("N° Departamentos (divisor)", min_value=300, max_value=500, value=380, step=1)
+
+        mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes) + 1
+        fecha_emision_def = datetime(anio, mes_num, 23)
+        fecha_venc_def = fecha_emision_def + timedelta(days=15)
+
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_emision = st.date_input("Fecha de Emisión", value=fecha_emision_def)
+        with col_f2:
+            fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def)
+
+        st.divider()
+        st.subheader("Subir archivo Excel de determinación de cuotas")
+        uploaded_file = st.file_uploader("Elige el archivo .xlsx", type=["xlsx"], key="det_cuotas")
+        df = None
+
         if uploaded_file is not None:
             try:
                 df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
@@ -25,10 +58,10 @@ tab1, tab2 = st.tabs(["📊 Programación Mantenimiento", "💰 Amortización"])
                     df = pd.read_excel(uploaded_file, sheet_name=0, skiprows=start_row)
                     df.columns = df.columns.str.strip().str.replace('\n', ' ')
                     
-                    # 🔥 ELIMINAR COLUMNAS DUPLICADAS (antes de renombrar)
+                    # 🔥 Eliminar columnas duplicadas (por si hay dos con el mismo nombre)
                     df = df.loc[:, ~df.columns.duplicated()]
                     
-                    # Buscar la columna de total (mantenimiento)
+                    # Buscar columna de total (mantenimiento)
                     col_monto = None
                     for col in df.columns:
                         col_low = col.lower()
@@ -49,33 +82,38 @@ tab1, tab2 = st.tabs(["📊 Programación Mantenimiento", "💰 Amortización"])
                         st.dataframe(df.head(8))
             except Exception as e:
                 st.error(f"Error al leer: {e}")
+
+        if df is not None:
+            periodo_key = f"{mes.upper()}_{int(anio)}"
+            if gsheets.existe_programacion(periodo_key):
+                st.error(f"⚠️ Ya existe una programación para {mes} {anio}")
+                st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
+            else:
+                if st.button("Guardar en Google Sheets", type="primary", key="guardar_det_cuotas"):
+                    with st.spinner("Guardando..."):
+                        try:
+                            nombre_hoja = gsheets.crear_y_guardar_programacion(
+                                df, periodo_key, mes, int(anio)
+                            )
+                            st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                        except Exception as e:
+                            st.error(f"Error al guardar: {e}")
+
     # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
     with subtab2:
         st.subheader("Programaciones Guardadas")
 
         try:
-            # listar hojas que empiecen con "Prog_"
             hojas_prog = gsheets.listar_hojas_programacion()
         except Exception as e:
             st.error(f"No se pudo conectar con Google Sheets: {e}")
             hojas_prog = []
 
         if hojas_prog:
-            hoja_seleccionada = st.selectbox("Selecciona el período de programación:", hojas_prog)
+            hoja_seleccionada = st.selectbox("Selecciona la programación:", hojas_prog)
             df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
 
             if not df_guardado.empty:
-                # Renombrar la columna de total a "Mantenimiento" si está como "Total a pagar" u otro
-                # Pero la función leer_hoja_programacion ya debe devolver la columna "Mantenimiento"
-                # Si no, podemos buscar y renombrar aquí
-                col_total = None
-                for col in df_guardado.columns:
-                    if 'total' in col.lower() or 'mantenimiento' in col.lower():
-                        col_total = col
-                        break
-                if col_total and col_total != 'Mantenimiento':
-                    df_guardado.rename(columns={col_total: 'Mantenimiento'}, inplace=True)
-
                 # Función para formatear números sin .0
                 def formatear_numero(valor):
                     try:
@@ -89,24 +127,34 @@ tab1, tab2 = st.tabs(["📊 Programación Mantenimiento", "💰 Amortización"])
                     except (ValueError, TypeError):
                         return str(valor)
 
-                # Aplicar formateo a columnas numéricas (torre, departamento, mantenimiento)
                 for col in ['torre', 'departamento', 'Mantenimiento']:
                     if col in df_guardado.columns:
                         df_guardado[col] = df_guardado[col].apply(formatear_numero)
 
-                # Índice empezando en 1
-                df_guardado = df_guardado.reset_index(drop=True)
-                df_guardado.index = df_guardado.index + 1
+                # Renombrar columnas para visualización amigable
+                mapeo = {
+                    'torre': 'TORRE',
+                    'departamento': 'N°DPTO',
+                    'Mantenimiento': 'MANTENIMIENTO (S/)'
+                }
+                # Solo renombrar las que existen
+                df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
-                st.dataframe(df_guardado.fillna(""), use_container_width=True, height=600)
+                # Eliminar columnas duplicadas (seguridad)
+                df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
+
+                # Índice empezando en 1
+                df_viz = df_viz.reset_index(drop=True)
+                df_viz.index = df_viz.index + 1
+
+                st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
 
                 # Botón de descarga
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_guardado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                    df_viz.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
                 excel_data = output.getvalue()
-
                 st.download_button(
                     label="📥 Descargar como Excel",
                     data=excel_data,
@@ -116,7 +164,7 @@ tab1, tab2 = st.tabs(["📊 Programación Mantenimiento", "💰 Amortización"])
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
-            st.info("No hay hojas de programación guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+            st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
 
 # ====================== TAB 2: AMORTIZACIÓN (con sus dos sub-pestañas) ======================
 with tab2:
@@ -205,57 +253,54 @@ with tab2:
         elif df_amort is not None and df_amort.empty:
             st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
 
-       # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
-with subtab2:
-    st.subheader("Programaciones Guardadas")
-    try:
-        hojas_prog = gsheets.listar_hojas_programacion()
-    except Exception as e:
-        st.error(f"No se pudo conectar con Google Sheets: {e}")
-        hojas_prog = []
-    if hojas_prog:
-        hoja_seleccionada = st.selectbox("Selecciona la programación:", hojas_prog)
-        df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
-        if not df_guardado.empty:
-            # Función para formatear números sin .0
-            def formatear_numero(valor):
-                try:
-                    if pd.isna(valor):
-                        return ""
-                    num = float(valor)
-                    if num.is_integer():
-                        return str(int(num))
-                    else:
-                        return str(num)
-                except (ValueError, TypeError):
-                    return str(valor)
-            # Aplicar formateo
-            for col in ['torre', 'departamento', 'Mantenimiento']:
-                if col in df_guardado.columns:
-                    df_guardado[col] = df_guardado[col].apply(formatear_numero)
-            # Renombrar para mostrar
-            df_viz = df_guardado.rename(columns={
-                'torre': 'TORRE',
-                'departamento': 'N°DPTO',
-                'Mantenimiento': 'MANTENIMIENTO (S/)'
-            })
-            # Índice desde 1
-            df_viz = df_viz.reset_index(drop=True)
-            df_viz.index = df_viz.index + 1
-            st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
-            # Descarga
-            import io
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_viz.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
-            excel_data = output.getvalue()
-            st.download_button(
-                label="📥 Descargar como Excel",
-                data=excel_data,
-                file_name=f"{hoja_seleccionada}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    # ---------- SUBTAB 2: VISUALIZAR AMORTIZACIÓN ----------
+    with subtab2:
+        st.subheader("Amortizaciones Guardadas")
+
+        try:
+            hojas_amort = gsheets.listar_hojas_amortizacion()
+        except Exception as e:
+            st.error(f"No se pudo conectar con Google Sheets: {e}")
+            hojas_amort = []
+
+        if hojas_amort:
+            hoja_seleccionada = st.selectbox("Selecciona el período de amortización:", hojas_amort)
+            df_guardado = gsheets.leer_hoja_amortizacion(hoja_seleccionada)
+
+            if not df_guardado.empty:
+                def formatear_numero(valor):
+                    try:
+                        if pd.isna(valor):
+                            return ""
+                        num = float(valor)
+                        if num.is_integer():
+                            return str(int(num))
+                        else:
+                            return str(num)
+                    except (ValueError, TypeError):
+                        return str(valor)
+
+                for col in ['TORRE', 'N°DPTO', 'CODIGO', 'AMORTIZACION CONVENIO']:
+                    if col in df_guardado.columns:
+                        df_guardado[col] = df_guardado[col].apply(formatear_numero)
+
+                df_guardado = df_guardado.reset_index(drop=True)
+                df_guardado.index = df_guardado.index + 1
+
+                st.dataframe(df_guardado.fillna(""), use_container_width=True, height=600)
+
+                import io
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_guardado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                excel_data = output.getvalue()
+                st.download_button(
+                    label="📥 Descargar como Excel",
+                    data=excel_data,
+                    file_name=f"{hoja_seleccionada}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.info("La hoja seleccionada está vacía.")
         else:
-            st.info("La hoja seleccionada está vacía o no tiene el formato esperado.")
-    else:
-        st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+            st.info("No hay hojas de amortización guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
