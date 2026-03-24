@@ -133,16 +133,88 @@ def listar_hojas_pagos():
     nombres.sort(reverse=True)
     return nombres
 
-def leer_hoja_pagos(nombre_hoja):
+def leer_pagos_mes(mes: str, anio: int):
+    """
+    Lee la hoja de pagos y devuelve fecha, torre, departamento, ingresos, n_operacion,
+    mantenimiento, amortizacion, medidor.
+    """
+    nombre_hoja = f"Pagos {mes} {anio}"
+    st.write(f"🔍 Buscando hoja: **{nombre_hoja}**")  # depuración
     spreadsheet = get_spreadsheet()
-    worksheet = spreadsheet.worksheet(nombre_hoja)
+    try:
+        worksheet = spreadsheet.worksheet(nombre_hoja)
+        st.write(f"✅ Hoja encontrada: {nombre_hoja}")
+    except gspread.exceptions.WorksheetNotFound:
+        st.warning(f"❌ No se encontró la hoja {nombre_hoja}")
+        return pd.DataFrame()
     datos = worksheet.get_all_values()
     if len(datos) < 2:
+        st.warning(f"La hoja {nombre_hoja} tiene menos de 2 filas")
         return pd.DataFrame()
     headers = datos[0]
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
-    return df
+    df.columns = df.columns.str.strip().str.replace('\n', ' ')
+
+    st.write("📋 Columnas en la hoja de pagos:", list(df.columns))
+
+    # Mapeo flexible de columnas
+    col_fecha = None
+    col_torre = None
+    col_dpto = None
+    col_ing = None
+    col_oper = None
+    col_mant = None
+    col_amort = None
+    col_med = None
+
+    for col in df.columns:
+        col_low = col.lower()
+        if 'fecha' in col_low:
+            col_fecha = col
+        elif 'torre' in col_low:
+            col_torre = col
+        elif 'dpto' in col_low or 'departamento' in col_low:
+            col_dpto = col
+        elif 'ingresos' in col_low or 'pagos' in col_low:
+            col_ing = col
+        elif 'operación' in col_low or 'n_operacion' in col_low:
+            col_oper = col
+        elif 'mantenimiento' in col_low:
+            col_mant = col
+        elif 'amortizacion' in col_low:
+            col_amort = col
+        elif 'medidor' in col_low:
+            col_med = col
+
+    st.write("🔎 Columnas detectadas:")
+    st.write(f"  fecha: {col_fecha}")
+    st.write(f"  torre: {col_torre}")
+    st.write(f"  departamento: {col_dpto}")
+    st.write(f"  ingresos: {col_ing}")
+    st.write(f"  n_operacion: {col_oper}")
+    st.write(f"  mantenimiento: {col_mant}")
+    st.write(f"  amortizacion: {col_amort}")
+    st.write(f"  medidor: {col_med}")
+
+    if not (col_fecha and col_torre and col_dpto and col_ing):
+        st.error("No se encontraron columnas esenciales (fecha, torre, dpto, ingresos)")
+        return pd.DataFrame()
+
+    df_out = pd.DataFrame()
+    df_out['fecha'] = pd.to_datetime(df[col_fecha], errors='coerce')
+    df_out['torre'] = pd.to_numeric(df[col_torre], errors='coerce')
+    df_out['departamento'] = pd.to_numeric(df[col_dpto], errors='coerce')
+    df_out['ingresos'] = pd.to_numeric(df[col_ing], errors='coerce')
+    df_out['n_operacion'] = df[col_oper].astype(str) if col_oper else ''
+    df_out['mantenimiento'] = pd.to_numeric(df[col_mant], errors='coerce').fillna(0) if col_mant else 0
+    df_out['amortizacion'] = pd.to_numeric(df[col_amort], errors='coerce').fillna(0) if col_amort else 0
+    df_out['medidor'] = pd.to_numeric(df[col_med], errors='coerce').fillna(0) if col_med else 0
+
+    df_out = df_out.sort_values('fecha')
+    st.write("✅ Primeras 5 filas de pagos cargadas:")
+    st.dataframe(df_out.head(5))
+    return df_out
 
 # ------------------- Medidores -------------------
 def guardar_medidor(df: pd.DataFrame, mes: str, anio: int):
