@@ -468,3 +468,36 @@ def leer_hoja_deuda(nombre_hoja):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     return df
+# ====================== FUNCIONES PARA VISUALIZAR PROGRAMACIÓN ======================
+def listar_hojas_programacion():
+    """Devuelve lista de hojas que empiezan con 'Prog_'"""
+    spreadsheet = get_spreadsheet()
+    hojas = spreadsheet.worksheets()
+    nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Prog_")]
+    nombres.sort(reverse=True)
+    return nombres
+
+def leer_hoja_programacion(nombre_hoja):
+    """Lee una hoja de programación y devuelve DataFrame con columnas estándar"""
+    spreadsheet = get_spreadsheet()
+    worksheet = spreadsheet.worksheet(nombre_hoja)
+    datos = worksheet.get_all_values()
+    if len(datos) < 4:
+        return pd.DataFrame()
+    headers = datos[3]
+    filas = datos[4:]
+    df = pd.DataFrame(filas, columns=headers)
+    df.columns = df.columns.str.strip().str.replace('\n', ' ')
+    # Buscar columna de total y renombrar a "Mantenimiento"
+    col_total = None
+    for col in df.columns:
+        if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
+            col_total = col
+            break
+    if col_total and col_total != 'Mantenimiento':
+        df.rename(columns={col_total: 'Mantenimiento'}, inplace=True)
+    # Convertir columnas numéricas
+    for col in ['torre', 'departamento', 'Mantenimiento']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    return df
