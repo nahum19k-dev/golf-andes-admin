@@ -227,38 +227,32 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             df_final.index = df_final.index + 1
 
             # ========== CABECERA CON AGRUPACIÓN PARA PROGRAMACIÓN ==========
-            # Identificar las columnas que agrupamos bajo "PROGRAMACION"
-            # Asumimos el orden de columnas después de 'nombre':
-            # índice 5: deuda_inicial, 6: mantenimiento, 7: amortizacion, 8: medidor, 9: total_programacion
-            # Construimos un HTML que muestre una fila con una celda fusionada sobre esas columnas
-            # y debajo las cabeceras normales (que mostrará el dataframe por separado)
+            # Identificar las columnas a agrupar
             col_headers = list(df_final.columns)
-            # Encontramos las posiciones de las columnas que queremos agrupar
             group_cols = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
             if all(col in col_headers for col in group_cols):
-                # Construir tabla HTML
-                html = '<table style="width:100%; border-collapse: collapse; margin-bottom: 5px;">'
-                # Primera fila: celda fusionada para "PROGRAMACION"
-                html += '<tr>'
-                # Contar columnas antes de la primera columna agrupada
                 first_idx = col_headers.index(group_cols[0])
-                # Celdas vacías antes del grupo
-                for _ in range(first_idx):
-                    html += '<td style="border: none;"></td>'
-                # Celda fusionada que abarca 5 columnas
-                html += '<td colspan="5" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd;">PROGRAMACION</td>'
-                # Celdas vacías después del grupo
                 last_idx = col_headers.index(group_cols[-1])
-                remaining = len(col_headers) - last_idx - 1
-                for _ in range(remaining):
-                    html += '<td style="border: none;"></td>'
+                span = last_idx - first_idx + 1
+                
+                # Crear tabla HTML con una sola fila y una celda fusionada
+                html = '<div style="margin-bottom: -10px;">'
+                html += '<table style="width:100%; border-collapse: collapse; margin-bottom: 0;">'
+                html += '<tr>'
+                # Celdas vacías antes de las columnas agrupadas
+                for i in range(first_idx):
+                    html += '<td style="border: none;"> </td>'
+                # Celda fusionada que abarca todas las columnas agrupadas
+                html += f'<td colspan="{span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd;">PROGRAMACION</td>'
+                # Celdas vacías después de las columnas agrupadas
+                for i in range(last_idx+1, len(col_headers)):
+                    html += '<td style="border: none;"> </td>'
                 html += '</tr>'
-                # Segunda fila: podríamos opcionalmente poner las cabeceras normales, pero el dataframe ya las mostrará.
-                # Para no duplicar, cerramos la tabla y dejamos que el dataframe muestre sus columnas.
                 html += '</table>'
+                html += '</div>'
                 st.markdown(html, unsafe_allow_html=True)
 
-            # Mostrar dataframe (con sus cabeceras propias)
+            st.subheader(f"Estado de Cuenta - {mes} {anio}")
             st.dataframe(df_final, use_container_width=True, height=600)
 
             # Descarga
