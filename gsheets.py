@@ -73,7 +73,6 @@ def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, a
         rows=700,
         cols=max(40, len(df.columns) + 10)
     )
-    # Título
     titulo = f"DETERMINACION DE CUOTA MES DE {mes.upper()}-{anio} - CONJUNTO RESIDENCIAL GOLF LOS ANDES I"
     nueva_hoja.update("A1", [[titulo]])
     nueva_hoja.format("A1", {
@@ -82,10 +81,8 @@ def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, a
     })
     nueva_hoja.merge_cells("A1:AG1")
     nueva_hoja.update("A2", [[""]])
-    # Encabezados
     encabezados = df.columns.tolist()
     nueva_hoja.update("A3", [encabezados])
-    # Datos (convertir fechas a string)
     df_para_guardar = df.copy()
     for col in df_para_guardar.columns:
         if pd.api.types.is_datetime64_any_dtype(df_para_guardar[col]):
@@ -235,7 +232,8 @@ def leer_hoja_amortizacion(nombre_hoja):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     return df
-# ====================== FUNCIONES PARA DEUDA INICIAL ======================
+
+# ------------------- Deuda Inicial -------------------
 def guardar_deuda_inicial(df: pd.DataFrame, anio: int):
     nombre_base = f"Deuda Inicial {anio}"
     spreadsheet = get_spreadsheet()
@@ -280,10 +278,13 @@ def leer_hoja_deuda(nombre_hoja):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     return df
-# ====================== FUNCIONES PARA OPERACIONES ======================
+
+# ====================== FUNCIONES DE LECTURA PARA OPERACIONES ======================
 def leer_programacion(mes: str, anio: int):
-    """Lee la hoja de programación (determinación de cuotas) para el mes y año dados.
-    Retorna DataFrame con columnas: torre, departamento, total_programacion (columna que se detecta automáticamente)"""
+    """
+    Lee la hoja de programación (determinación de cuotas) para el mes y año dados.
+    Retorna DataFrame con columnas: torre, departamento, total_programacion.
+    """
     nombre_hoja = f"Prog_{mes.upper()}_{anio}"
     spreadsheet = get_spreadsheet()
     try:
@@ -291,14 +292,12 @@ def leer_programacion(mes: str, anio: int):
     except gspread.exceptions.WorksheetNotFound:
         return pd.DataFrame()
     datos = worksheet.get_all_values()
-    if len(datos) < 4:  # hay título, fila vacía, encabezados, datos
+    if len(datos) < 4:
         return pd.DataFrame()
-    headers = datos[3]  # después del título y fila vacía
+    headers = datos[3]
     filas = datos[4:]
     df = pd.DataFrame(filas, columns=headers)
-    # Limpiar nombres de columnas
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-    # Buscar la columna que contiene el monto total a pagar
     col_monto = None
     for col in df.columns:
         if 'total' in col.lower() or 'cuota' in col.lower() or 'pagar' in col.lower():
@@ -306,7 +305,6 @@ def leer_programacion(mes: str, anio: int):
             break
     if col_monto is None:
         return pd.DataFrame()
-    # Renombrar columnas clave
     rename_map = {}
     for col in df.columns:
         if 'torre' in col.lower():
@@ -316,7 +314,6 @@ def leer_programacion(mes: str, anio: int):
         elif col == col_monto:
             rename_map[col] = 'total_programacion'
     df = df.rename(columns=rename_map)
-    # Convertir a numérico
     if 'total_programacion' in df.columns:
         df['total_programacion'] = pd.to_numeric(df['total_programacion'], errors='coerce')
     if 'torre' in df.columns:
@@ -326,7 +323,10 @@ def leer_programacion(mes: str, anio: int):
     return df
 
 def leer_amortizacion(mes: str, anio: int):
-    """Lee la hoja de amortización para el mes y año dados."""
+    """
+    Lee la hoja de amortización para el mes y año dados.
+    Retorna DataFrame con columnas: torre, departamento, amortizacion.
+    """
     nombre_hoja = f"Amortización {mes} {anio}"
     spreadsheet = get_spreadsheet()
     try:
@@ -339,9 +339,7 @@ def leer_amortizacion(mes: str, anio: int):
     headers = datos[0]
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
-    # Limpiar nombres
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-    # Renombrar columnas
     rename_map = {}
     for col in df.columns:
         if 'torre' in col.lower():
@@ -360,7 +358,10 @@ def leer_amortizacion(mes: str, anio: int):
     return df
 
 def leer_medidores(mes: str, anio: int):
-    """Lee la hoja de medidores para el mes y año dados."""
+    """
+    Lee la hoja de medidores para el mes y año dados.
+    Retorna DataFrame con columnas: torre, departamento, monto.
+    """
     nombre_hoja = f"Medidor {mes} {anio}"
     spreadsheet = get_spreadsheet()
     try:
@@ -374,7 +375,6 @@ def leer_medidores(mes: str, anio: int):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-    # Renombrar
     rename_map = {}
     for col in df.columns:
         if 'torre' in col.lower():
@@ -393,7 +393,10 @@ def leer_medidores(mes: str, anio: int):
     return df
 
 def leer_pagos_mes(mes: str, anio: int):
-    """Lee la hoja de pagos para el mes y año dados y devuelve cada transacción individual."""
+    """
+    Lee la hoja de pagos para el mes y año dados y devuelve cada transacción individual.
+    Retorna DataFrame con columnas: fecha, torre, departamento, ingresos, n_operacion.
+    """
     nombre_hoja = f"Pagos {mes} {anio}"
     spreadsheet = get_spreadsheet()
     try:
@@ -407,7 +410,6 @@ def leer_pagos_mes(mes: str, anio: int):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-    # Renombrar columnas clave
     rename_map = {}
     for col in df.columns:
         if 'fecha' in col.lower():
@@ -418,7 +420,7 @@ def leer_pagos_mes(mes: str, anio: int):
             rename_map[col] = 'departamento'
         elif 'ingresos' in col.lower() or 'pagos' in col.lower():
             rename_map[col] = 'ingresos'
-        elif 'n_operacion' in col.lower() or 'operación' in col.lower():
+        elif 'operación' in col.lower() or 'n_operacion' in col.lower():
             rename_map[col] = 'n_operacion'
     df = df.rename(columns=rename_map)
     if 'fecha' in df.columns:
@@ -429,6 +431,13 @@ def leer_pagos_mes(mes: str, anio: int):
         df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
     if 'ingresos' in df.columns:
         df['ingresos'] = pd.to_numeric(df['ingresos'], errors='coerce')
-    # Ordenar por fecha
     df = df.sort_values('fecha')
     return df
+
+def leer_deuda_inicial(anio: int):
+    """
+    Lee la hoja de deuda inicial para el año dado.
+    Retorna DataFrame con las columnas originales de la hoja (TORRE, N°DPTO, etc.).
+    """
+    nombre_hoja = f"Deuda Inicial {anio}"
+    return leer_hoja_deuda(nombre_hoja)
