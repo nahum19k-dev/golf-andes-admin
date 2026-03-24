@@ -137,20 +137,37 @@ def leer_pagos_mes(mes: str, anio: int):
     """
     Lee la hoja de pagos y devuelve fecha, torre, departamento, ingresos, n_operacion,
     mantenimiento, amortizacion, medidor.
+    Busca la hoja con nombre exacto "Pagos {mes} {anio}" o con sufijo (2), (3), etc.
     """
-    nombre_hoja = f"Pagos {mes} {anio}"
-    st.write(f"🔍 Buscando hoja: **{nombre_hoja}**")  # depuración
+    nombre_base = f"Pagos {mes} {anio}"
+    st.write(f"🔍 Buscando hoja: **{nombre_base}**")
+
     spreadsheet = get_spreadsheet()
+    # Obtener todas las hojas
+    hojas = spreadsheet.worksheets()
+    nombres_hojas = [hoja.title for hoja in hojas]
+
+    # Buscar coincidencias
+    coincidencias = [h for h in nombres_hojas if h.startswith(nombre_base)]
+    if not coincidencias:
+        st.warning(f"No se encontró ninguna hoja que empiece con '{nombre_base}'")
+        st.write("Hojas disponibles:", nombres_hojas)
+        return pd.DataFrame()
+    # Tomar la primera coincidencia (la más reciente si están ordenadas, pero no garantizado)
+    nombre_hoja = coincidencias[0]
+    st.write(f"✅ Usando hoja: **{nombre_hoja}**")
+
     try:
         worksheet = spreadsheet.worksheet(nombre_hoja)
-        st.write(f"✅ Hoja encontrada: {nombre_hoja}")
     except gspread.exceptions.WorksheetNotFound:
-        st.warning(f"❌ No se encontró la hoja {nombre_hoja}")
+        st.error(f"Error: no se pudo acceder a la hoja {nombre_hoja}")
         return pd.DataFrame()
+
     datos = worksheet.get_all_values()
     if len(datos) < 2:
         st.warning(f"La hoja {nombre_hoja} tiene menos de 2 filas")
         return pd.DataFrame()
+
     headers = datos[0]
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
@@ -197,6 +214,7 @@ def leer_pagos_mes(mes: str, anio: int):
     st.write(f"  amortizacion: {col_amort}")
     st.write(f"  medidor: {col_med}")
 
+    # Si no encuentra las esenciales, devuelve vacío
     if not (col_fecha and col_torre and col_dpto and col_ing):
         st.error("No se encontraron columnas esenciales (fecha, torre, dpto, ingresos)")
         return pd.DataFrame()
@@ -207,6 +225,7 @@ def leer_pagos_mes(mes: str, anio: int):
     df_out['departamento'] = pd.to_numeric(df[col_dpto], errors='coerce')
     df_out['ingresos'] = pd.to_numeric(df[col_ing], errors='coerce')
     df_out['n_operacion'] = df[col_oper].astype(str) if col_oper else ''
+    # Si no se encontraron las columnas de desglose, se asigna 0
     df_out['mantenimiento'] = pd.to_numeric(df[col_mant], errors='coerce').fillna(0) if col_mant else 0
     df_out['amortizacion'] = pd.to_numeric(df[col_amort], errors='coerce').fillna(0) if col_amort else 0
     df_out['medidor'] = pd.to_numeric(df[col_med], errors='coerce').fillna(0) if col_med else 0
