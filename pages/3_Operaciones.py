@@ -123,7 +123,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             # Merge programación
             base = base.merge(prog_df, on=['torre', 'departamento'], how='left')
-            base['total_programacion'] = base['total_programacion'].fillna(0)
+            base['Mantenimiento'] = base['Mantenimiento'].fillna(0)
 
             # Merge amortización
             base = base.merge(amort_df, on=['torre', 'departamento'], how='left')
