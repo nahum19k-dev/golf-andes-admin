@@ -109,26 +109,25 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 med_df = med_df[['torre', 'departamento', 'monto']].copy()
                 med_df['monto'] = med_df['monto'].fillna(0)
 
-            # ========== PAGOS ==========
+            # ========== PAGOS (con conceptos) ==========
+            # Usamos la función que devuelve fecha, torre, departamento, ingresos, n_operacion, mantenimiento, amortizacion, medidor
+            # Para ello necesitamos modificar la función leer_pagos_mes en gsheets.py para que devuelva esos campos.
+            # Por ahora, si no está disponible, usaremos la versión básica.
             pagos_df = gsheets.leer_pagos_mes(mes, anio)
             if pagos_df.empty:
                 st.warning(f"No se encontraron pagos para {mes} {anio}.")
                 pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'ingresos', 'n_operacion',
                                                  'mantenimiento', 'amortizacion', 'medidor'])
             else:
-                for col in ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
-                    if col in pagos_df.columns:
-                        pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce')
-                # Asegurar que los conceptos existan
+                # Asegurar que las columnas de conceptos existan
                 for col in ['mantenimiento', 'amortizacion', 'medidor']:
                     if col not in pagos_df.columns:
                         pagos_df[col] = 0
-                pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
-                                     'mantenimiento', 'amortizacion', 'medidor']].copy()
-                pagos_df['ingresos'] = pagos_df['ingresos'].fillna(0)
-                pagos_df['mantenimiento'] = pagos_df['mantenimiento'].fillna(0)
-                pagos_df['amortizacion'] = pagos_df['amortizacion'].fillna(0)
-                pagos_df['medidor'] = pagos_df['medidor'].fillna(0)
+                for col in ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
+                    if col in pagos_df.columns:
+                        pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce').fillna(0)
+                pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']].copy()
+                pagos_df = pagos_df.sort_values('fecha')
 
             # ========== UNIR TABLAS ==========
             base = base.merge(deuda_df, on=['torre', 'departamento'], how='left').fillna(0)
@@ -153,9 +152,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 pagos_dpto = pagos_df[(pagos_df['torre'] == torre) & (pagos_df['departamento'] == dpto)].copy()
                 pagos_dpto = pagos_dpto.sort_values('fecha')
 
-                # Fila de cargo (sin número de operación)
                 movimientos.append({
-                    'tipo': 'cargo',
                     'fecha': f"01/{mes[:3]}/{anio}",
                     'codigo': codigo,
                     'dni': dni,
@@ -166,9 +163,9 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     'medidor': med,
                     'total_programacion': total_cargos,
                     'n_operacion': '',
-                    'pago_mantenimiento': 0,
-                    'pago_amortizacion': 0,
-                    'pago_medidor': 0,
+                    'mantenimiento_pago': 0,
+                    'amortizacion_pago': 0,
+                    'medidor_pago': 0,
                     'total_pagado': 0,
                     'saldo': total_cargos
                 })
@@ -177,7 +174,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 for _, pago in pagos_dpto.iterrows():
                     saldo -= pago['ingresos']
                     movimientos.append({
-                        'tipo': 'pago',
                         'fecha': pago['fecha'].strftime('%d/%m/%Y') if pd.notna(pago['fecha']) else '',
                         'codigo': codigo,
                         'dni': dni,
@@ -188,9 +184,9 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                         'medidor': '',
                         'total_programacion': '',
                         'n_operacion': pago['n_operacion'],
-                        'pago_mantenimiento': pago['mantenimiento'],
-                        'pago_amortizacion': pago['amortizacion'],
-                        'pago_medidor': pago['medidor'],
+                        'mantenimiento_pago': pago['mantenimiento'],
+                        'amortizacion_pago': pago['amortizacion'],
+                        'medidor_pago': pago['medidor'],
                         'total_pagado': pago['ingresos'],
                         'saldo': saldo
                     })
@@ -210,91 +206,39 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 except:
                     return val
 
-            for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion', 
-                        'pago_mantenimiento', 'pago_amortizacion', 'pago_medidor', 'total_pagado', 'saldo']:
+            for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
+                        'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']:
                 if col in df_mov.columns:
                     df_mov[col] = df_mov[col].apply(fmt_num)
 
-            # ========== PREPARAR DATOS PARA MOSTRAR ==========
-            # Separar cargos y pagos
-            df_cargos = df_mov[df_mov['tipo'] == 'cargo'].copy()
-            df_pagos = df_mov[df_mov['tipo'] == 'pago'].copy()
-
-            # Unir en una sola tabla pero con columnas separadas
-            # Crear tabla final con el formato deseado
-            # Primero, agregar una columna de índice para ordenar correctamente
-            df_cargos['orden'] = range(1, len(df_cargos)+1)
-            df_pagos['orden'] = range(1, len(df_pagos)+1)
-            # Mezclar cargos y pagos por orden (esto no es necesario si queremos que los cargos aparezcan primero y luego pagos)
-            # Pero como los pagos ya tienen fechas específicas, los mostraremos después del cargo.
-            # Para que aparezcan en orden cronológico, podríamos unir y ordenar por fecha. Sin embargo, por ahora mantendremos:
-            # - Primero el cargo (con fecha de emisión)
-            # - Luego los pagos en orden de fecha
-            # Esto ya está construido en la lista de movimientos: primero el cargo, luego los pagos en orden.
-            # Entonces podemos usar df_mov directamente, pero para mostrar necesitamos las columnas correctas.
-
-            # Construir el DataFrame de salida final
-            # Seleccionamos columnas según el tipo
-            final_rows = []
-            for _, row in df_mov.iterrows():
-                if row['tipo'] == 'cargo':
-                    final_rows.append({
-                        'fecha': row['fecha'],
-                        'codigo': row['codigo'],
-                        'dni': row['dni'],
-                        'nombre': row['nombre'],
-                        'deuda_inicial': row['deuda_inicial'],
-                        'mantenimiento': row['mantenimiento'],
-                        'amortizacion': row['amortizacion'],
-                        'medidor': row['medidor'],
-                        'total_programacion': row['total_programacion'],
-                        'n_operacion': '',
-                        'pago_mantenimiento': '',
-                        'pago_amortizacion': '',
-                        'pago_medidor': '',
-                        'total_pagado': '',
-                        'saldo': row['saldo']
-                    })
-                else:
-                    final_rows.append({
-                        'fecha': row['fecha'],
-                        'codigo': row['codigo'],
-                        'dni': row['dni'],
-                        'nombre': row['nombre'],
-                        'deuda_inicial': '',
-                        'mantenimiento': '',
-                        'amortizacion': '',
-                        'medidor': '',
-                        'total_programacion': '',
-                        'n_operacion': row['n_operacion'],
-                        'pago_mantenimiento': row['pago_mantenimiento'],
-                        'pago_amortizacion': row['pago_amortizacion'],
-                        'pago_medidor': row['pago_medidor'],
-                        'total_pagado': row['total_pagado'],
-                        'saldo': row['saldo']
-                    })
-            df_final = pd.DataFrame(final_rows)
-
-            # Agregar columna de índice
+            # Seleccionar y ordenar columnas finales
+            columnas_orden = [
+                'fecha', 'codigo', 'dni', 'nombre',
+                'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
+                'n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo'
+            ]
+            columnas_existentes = [c for c in columnas_orden if c in df_mov.columns]
+            df_final = df_mov[columnas_existentes].copy()
+            df_final = df_final.reset_index(drop=True)
             df_final.insert(0, '#', range(1, len(df_final)+1))
 
-            # ========== GENERAR TABLA HTML CON DOS SECCIONES (PROGRAMACION y PAGOS) ==========
+            # ========== GENERAR TABLA HTML CON DOS CABECERAS AGRUPADAS ==========
             col_names = list(df_final.columns)
-            # Las columnas que van bajo "PROGRAMACION"
-            group_cols_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
-            # Las columnas que van bajo "PAGOS"
-            group_cols_pagos = ['pago_mantenimiento', 'pago_amortizacion', 'pago_medidor', 'total_pagado']
+
+            # Grupos de columnas
+            grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
+            grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
 
             # Encontrar índices
-            prog_indices = [col_names.index(c) for c in group_cols_prog if c in col_names]
-            first_prog = min(prog_indices) if prog_indices else 0
-            last_prog = max(prog_indices) if prog_indices else 0
-            span_prog = last_prog - first_prog + 1
+            prog_indices = [col_names.index(c) for c in grupo_prog if c in col_names]
+            prog_first = min(prog_indices) if prog_indices else 0
+            prog_last = max(prog_indices) if prog_indices else 0
+            prog_span = prog_last - prog_first + 1
 
-            pagos_indices = [col_names.index(c) for c in group_cols_pagos if c in col_names]
-            first_pago = min(pagos_indices) if pagos_indices else 0
-            last_pago = max(pagos_indices) if pagos_indices else 0
-            span_pago = last_pago - first_pago + 1
+            pagos_indices = [col_names.index(c) for c in grupo_pagos if c in col_names]
+            pagos_first = min(pagos_indices) if pagos_indices else 0
+            pagos_last = max(pagos_indices) if pagos_indices else 0
+            pagos_span = pagos_last - pagos_first + 1
 
             # Construir HTML
             html = '<div style="overflow-x: auto;">'
@@ -302,60 +246,35 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS
-            html += ' hilab'
+            html += '苦'
             # Celdas antes de PROGRAMACION
-            for i in range(first_prog):
+            for i in range(prog_first):
                 html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
-            html += f'<th colspan="{span_prog}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 8px;">PROGRAMACION</th>'
+            html += f'<th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 8px;">PROGRAMACION</th>'
             # Celdas entre PROGRAMACION y PAGOS
-            for i in range(last_prog+1, first_pago):
+            for i in range(prog_last+1, pagos_first):
                 html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
-            html += f'<th colspan="{span_pago}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 8px;">PAGOS</th>'
+            html += f'<th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 8px;">PAGOS</th>'
             # Celdas después de PAGOS
-            for i in range(last_pago+1, len(col_names)):
+            for i in range(pagos_last+1, len(col_names)):
                 html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
             html += '</tr>'
 
             # Segunda fila: nombres de columnas
-            html += '气'
+            html += '苦'
             for col in col_names:
-                # Personalizar nombres para mejor visualización
-                if col == 'deuda_inicial':
-                    display = 'DEUDA INICIAL'
-                elif col == 'mantenimiento':
-                    display = 'MANTENIMIENTO'
-                elif col == 'amortizacion':
-                    display = 'AMORTIZACIÓN CONVENIO'
-                elif col == 'medidor':
-                    display = 'MEDIDOR'
-                elif col == 'total_programacion':
-                    display = 'TOTAL PROGRAMACIÓN'
-                elif col == 'pago_mantenimiento':
-                    display = 'MANTENIMIENTO'
-                elif col == 'pago_amortizacion':
-                    display = 'AMORTIZACIÓN CONVENIO'
-                elif col == 'pago_medidor':
-                    display = 'MEDIDOR'
-                elif col == 'total_pagado':
-                    display = 'TOTAL PAGADO'
-                elif col == 'saldo':
-                    display = 'SALDO POR COBRAR ACTUAL'
-                elif col == 'n_operacion':
-                    display = 'N°OPERACIÓN'
-                else:
-                    display = col.upper()
-                html += f'<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6; text-align: left;">{display}</th>'
+                html += f'<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6; text-align: left;">{col}</th>'
             html += '</tr>'
             html += '</thead><tbody>'
 
             # Filas de datos
             for _, row in df_final.iterrows():
-                html += '气'
+                html += '苦'
                 for col in col_names:
                     val = row[col]
-                    # Aplicar alineación derecha a números
+                    # Alineación derecha para números
                     if col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
-                               'pago_mantenimiento', 'pago_amortizacion', 'pago_medidor', 'total_pagado', 'saldo']:
+                               'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']:
                         align = 'right'
                     else:
                         align = 'left'
