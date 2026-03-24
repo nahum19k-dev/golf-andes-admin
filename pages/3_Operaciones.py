@@ -146,9 +146,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
                 movimientos.append({
                     'fecha': f"01/{mes[:3]}/{anio}",
-                    'torre': torre,
-                    'departamento': dpto,
-                    'codigo': codigo,
+                    'codigo': codigo,          # usamos codigo en lugar de torre/departamento
                     'dni': dni,
                     'nombre': nombre,
                     'deuda_inicial': deuda,
@@ -166,8 +164,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     saldo -= pago['ingresos']
                     movimientos.append({
                         'fecha': pago['fecha'].strftime('%d/%m/%Y') if pd.notna(pago['fecha']) else '',
-                        'torre': torre,
-                        'departamento': dpto,
                         'codigo': codigo,
                         'dni': dni,
                         'nombre': nombre,
@@ -200,8 +196,8 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 if col in df_mov.columns:
                     df_mov[col] = df_mov[col].apply(fmt_num)
 
-            # Seleccionar y ordenar columnas finales
-            columnas_orden = ['fecha', 'torre', 'departamento', 'dni', 'nombre', 'deuda_inicial',
+            # Seleccionar y ordenar columnas finales (sin torre ni departamento)
+            columnas_orden = ['fecha', 'codigo', 'dni', 'nombre', 'deuda_inicial',
                               'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
                               'n_operacion', 'total_pagado', 'saldo']
             columnas_existentes = [c for c in columnas_orden if c in df_mov.columns]
@@ -211,9 +207,8 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             df_final.insert(0, '#', range(1, len(df_final)+1))
 
             # ========== GENERAR TABLA HTML CON CABECERA AGRUPADA ==========
-            # Identificar posiciones de las columnas que se agrupan
             col_names = list(df_final.columns)
-            # Las columnas que van bajo "PROGRAMACION" son: deuda_inicial, mantenimiento, amortizacion, medidor, total_programacion
+            # Las columnas que van bajo "PROGRAMACION" (ahora están en el orden correcto)
             group_cols = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
             # Encontrar índices reales en col_names
             group_indices = [col_names.index(c) for c in group_cols if c in col_names]
