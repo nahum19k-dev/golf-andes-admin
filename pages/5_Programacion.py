@@ -41,7 +41,6 @@ with tab1:
     if uploaded_file is not None:
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
-            # Buscar la fila que contiene "Lote" (ajusta según tu Excel)
             start_row = None
             for i in range(len(df_raw)):
                 if "Lote" in df_raw.iloc[i].values:
@@ -52,6 +51,9 @@ with tab1:
             else:
                 df = pd.read_excel(uploaded_file, sheet_name=0, skiprows=start_row)
                 df.columns = df.columns.str.strip().str.replace('\n', ' ')
+                # Resetear índice para que empiece en 1
+                df = df.reset_index(drop=True)
+                df.index = df.index + 1
                 st.success(f"Archivo leído: {len(df)} filas")
                 st.dataframe(df.head(8))
         except Exception as e:
@@ -97,7 +99,6 @@ with tab2:
             # Buscar la primera fila que contenga "TORRE" o "N°DPTO" para usarla como encabezado
             start_row = None
             for i in range(len(df_raw)):
-                # Convertir la fila a string y buscar palabras clave
                 row_str = ' '.join(df_raw.iloc[i].astype(str))
                 if 'TORRE' in row_str or 'N°DPTO' in row_str or 'ITEM' in row_str:
                     start_row = i
@@ -106,26 +107,23 @@ with tab2:
             if start_row is None:
                 st.error("No se encontró la fila con encabezados (buscando 'TORRE' o 'N°DPTO').")
             else:
-                # Leer desde la fila de encabezados
                 df_amort = pd.read_excel(uploaded_file_amort, sheet_name=0, skiprows=start_row)
-                # Limpiar nombres de columnas
                 df_amort.columns = df_amort.columns.str.strip().str.replace('\n', ' ')
-
-                # Eliminar columnas que empiezan con "Unnamed" (como Unnamed:0)
+                # Eliminar columnas Unnamed
                 df_amort = df_amort.loc[:, ~df_amort.columns.str.contains('^Unnamed', case=False)]
-
-                # Eliminar filas que tengan "TOTAL" en la columna ITEM o APELLIDOS
+                # Eliminar filas con TOTAL
                 if 'ITEM' in df_amort.columns:
                     df_amort = df_amort[~df_amort['ITEM'].astype(str).str.contains('TOTAL', case=False, na=False)]
                 if 'APELLIDOS  Y  NOMBRES' in df_amort.columns:
                     df_amort = df_amort[~df_amort['APELLIDOS  Y  NOMBRES'].astype(str).str.contains('TOTAL', case=False, na=False)]
-
-                # Eliminar filas con torre o departamento vacíos
+                # Eliminar filas sin torre o departamento
                 if 'TORRE' in df_amort.columns:
                     df_amort = df_amort.dropna(subset=['TORRE'])
                 if 'N°DPTO' in df_amort.columns:
                     df_amort = df_amort.dropna(subset=['N°DPTO'])
-
+                # Resetear índice para que empiece en 1
+                df_amort = df_amort.reset_index(drop=True)
+                df_amort.index = df_amort.index + 1
                 st.success(f"Archivo leído correctamente: {len(df_amort)} filas válidas")
                 st.write("Vista previa (primeras 10 filas):")
                 st.dataframe(df_amort.head(10))
