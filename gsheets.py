@@ -441,3 +441,16 @@ def leer_deuda_inicial(anio: int):
     """
     nombre_hoja = f"Deuda Inicial {anio}"
     return leer_hoja_deuda(nombre_hoja)
+def leer_hoja_deuda(nombre_hoja):
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet(nombre_hoja)
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
+    datos = worksheet.get_all_values()
+    if len(datos) < 2:
+        return pd.DataFrame()
+    headers = datos[0]
+    filas = datos[1:]
+    df = pd.DataFrame(filas, columns=headers)
+    return df
