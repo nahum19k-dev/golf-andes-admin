@@ -476,96 +476,97 @@ def leer_hoja_programacion(nombre_hoja):
     worksheet = spreadsheet.worksheet(nombre_hoja)
     datos = worksheet.get_all_values()
     if len(datos) < 4:
-        st.warning(f"La hoja {nombre_hoja} tiene menos de 4 filas.")
         return pd.DataFrame()
 
-    # Los encabezados están en la fila 3 (índice 2)
+    # Encabezados en la tercera fila (índice 2)
     headers = datos[2]
     filas = datos[3:]
 
-    # Eliminar filas completamente vacías (opcional)
+    # Limpiar filas vacías
     filas = [f for f in filas if any(cell for cell in f)]
-
     if not filas:
-        st.warning("No hay filas de datos en la hoja.")
         return pd.DataFrame()
 
     df = pd.DataFrame(filas, columns=headers)
-    # Limpiar nombres de columnas: quitar espacios, saltos de línea, etc.
     df.columns = df.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
-    # --- Depuración (puedes eliminar después) ---
-    st.write("**Columnas encontradas en la hoja:**", list(df.columns))
-
-    # 1. Buscar la columna "Torre" (exacta, insensible a mayúsculas)
+    # 1. Buscar columna de torre
     col_torre = None
     for col in df.columns:
         if col.lower() == 'torre':
             col_torre = col
             break
-    # Si no, buscar con variantes
     if col_torre is None:
         for col in df.columns:
             if col.lower() in ['torre', 'edificio']:
                 col_torre = col
                 break
     if col_torre is None:
-        st.error(f"No se encontró columna 'Torre'. Columnas disponibles: {list(df.columns)}")
         return pd.DataFrame()
 
-    # 2. Buscar la columna "Departamento" (exacta, insensible a mayúsculas)
+    # 2. Buscar columna de departamento
     col_dpto = None
     for col in df.columns:
-        if col.lower() == 'departamento' or col.lower() == 'dpto' or col.lower() == 'n°dpto':
+        if col.lower() in ['departamento', 'dpto', 'n°dpto']:
             col_dpto = col
             break
     if col_dpto is None:
-        st.error(f"No se encontró columna 'Departamento'. Columnas disponibles: {list(df.columns)}")
         return pd.DataFrame()
 
-    # 3. Buscar la columna "Mantenimiento" (puede llamarse "Mantenimiento" o "Total" o similar)
+    # 3. Buscar columna de monto (Mantenimiento)
+    # Primero intentamos con la columna llamada "Mantenimiento"
     col_monto = None
     for col in df.columns:
         if col.lower() == 'mantenimiento':
             col_monto = col
             break
+    # Si esa columna está vacía o no tiene datos numéricos, probamos con "Sub Total S/." o cualquier columna que contenga "total"
+    if col_monto:
+        # Verificar si la columna tiene valores numéricos (al menos uno)
+        test_values = df[col_monto].dropna().head(5).astype(str)
+        has_numbers = any(v.replace(',', '.').replace('S/', '').strip().replace(' ', '').replace('.', '').isdigit() for v in test_values if v)
+        if not has_numbers:
+            col_monto = None
     if col_monto is None:
         for col in df.columns:
             if 'total' in col.lower() or 'cuota' in col.lower() or 'pagar' in col.lower():
-                col_monto = col
-                break
+                # Verificar que tenga datos numéricos
+                test_values = df[col].dropna().head(5).astype(str)
+                if any(v.replace(',', '.').replace('S/', '').strip().replace(' ', '').replace('.', '').isdigit() for v in test_values if v):
+                    col_monto = col
+                    break
     if col_monto is None:
-        st.error(f"No se encontró columna de monto (Mantenimiento/Total).")
         return pd.DataFrame()
 
-    st.write(f"**Columna Torre:** {col_torre}")
-    st.write(f"**Columna Departamento:** {col_dpto}")
-    st.write(f"**Columna Monto:** {col_monto}")
-
-    # Crear DataFrame con solo las tres columnas necesarias
+    # Crear DataFrame con las tres columnas
     df_out = df[[col_torre, col_dpto, col_monto]].copy()
     df_out.columns = ['torre', 'departamento', 'Mantenimiento']
 
-    # Convertir a numérico (reemplazar comas, puntos, etc.)
-    for col in ['torre', 'departamento', 'Mantenimiento']:
-        # Primero, eliminar espacios en blanco
-        df_out[col] = df_out[col].astype(str).str.strip()
-        # Reemplazar comas por puntos (para números decimales)
-        df_out[col] = df_out[col].str.replace(',', '.')
-        # Convertir a numérico, forzando errores a NaN
-        df_out[col] = pd.to_numeric(df_out[col], errors='coerce')
+    # Función para limpiar y convertir a número
+    def clean_number(x):
+        if pd.isna(x):
+            return np.nan
+        s = str(x).strip()
+        # Eliminar símbolo de moneda, espacios, y reemplazar coma por punto
+        s = s.replace('S/', '').replace('$', '').replace(' ', '').replace(',', '.')
+        # Si es solo un número, convertir
+        try:
+            return float(s)
+        except:
+            return np.nan
 
-    # Eliminar filas donde torre o departamento sean NaN
+    import numpy as np
+    df_out['Mantenimiento'] = df_out['Mantenimiento'].apply(clean_number)
+    df_out['torre'] = pd.to_numeric(df_out['torre'], errors='coerce')
+    df_out['departamento'] = pd.to_numeric(df_out['departamento'], errors='coerce')
+
+    # Eliminar filas sin torre o departamento
     df_out = df_out.dropna(subset=['torre', 'departamento'])
 
-    # Opcional: eliminar filas donde Mantenimiento sea NaN (si se quiere)
+    # Opcional: eliminar filas donde Mantenimiento sea NaN (si se desea)
     # df_out = df_out.dropna(subset=['Mantenimiento'])
 
-    st.write(f"**DataFrame final shape:** {df_out.shape}")
-    st.write("**Muestra:**")
-    st.dataframe(df_out.head(10))
-
-    # Eliminar columnas duplicadas por si acaso
+    # Eliminar columnas duplicadas
     df_out = df_out.loc[:, ~df_out.columns.duplicated()]
 
     return df_out
