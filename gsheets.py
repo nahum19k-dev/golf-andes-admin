@@ -469,8 +469,8 @@ def leer_hoja_deuda(nombre_hoja):
     df = pd.DataFrame(filas, columns=headers)
     return df
 # ====================== FUNCIONES PARA VISUALIZAR PROGRAMACIÓN ======================
+# Dentro de gsheets.py, al final, añade:
 def listar_hojas_programacion():
-    """Devuelve lista de hojas que empiezan con 'Prog_'"""
     spreadsheet = get_spreadsheet()
     hojas = spreadsheet.worksheets()
     nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Prog_")]
@@ -478,7 +478,6 @@ def listar_hojas_programacion():
     return nombres
 
 def leer_hoja_programacion(nombre_hoja):
-    """Lee una hoja de programación y devuelve DataFrame con columnas estándar"""
     spreadsheet = get_spreadsheet()
     worksheet = spreadsheet.worksheet(nombre_hoja)
     datos = worksheet.get_all_values()
@@ -495,11 +494,9 @@ def leer_hoja_programacion(nombre_hoja):
             col_total = col
             break
     if col_total and col_total != 'Mantenimiento':
-        # Si ya existe una columna "Mantenimiento", la eliminamos para evitar duplicados
         if 'Mantenimiento' in df.columns:
             df = df.drop(columns=['Mantenimiento'])
         df.rename(columns={col_total: 'Mantenimiento'}, inplace=True)
-    # Convertir columnas numéricas
     for col in ['torre', 'departamento', 'Mantenimiento']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
