@@ -114,6 +114,33 @@ with tab1:
             df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
 
             if not df_guardado.empty:
+                # Cargar propietarios para obtener nombre y DNI
+                prop = gsheets.leer_propietarios()
+                if not prop.empty:
+                    # Detectar columnas de torre y departamento en prop
+                    col_torre_prop = None
+                    col_dpto_prop = None
+                    for col in prop.columns:
+                        if col.lower() == 'torre':
+                            col_torre_prop = col
+                        elif col.lower() in ['departamento', 'dpto', 'n°dpto']:
+                            col_dpto_prop = col
+                    if col_torre_prop is None or col_dpto_prop is None:
+                        st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios. No se mostrarán nombres ni DNI.")
+                        df_mostrar = df_guardado.copy()
+                    else:
+                        # Preparar propietarios para merge
+                        prop_sub = prop[[col_torre_prop, col_dpto_prop, 'nombre', 'dni']].copy()
+                        prop_sub.rename(columns={col_torre_prop: 'torre', col_dpto_prop: 'departamento'}, inplace=True)
+                        # Convertir a numérico para merge correcto
+                        prop_sub['torre'] = pd.to_numeric(prop_sub['torre'], errors='coerce')
+                        prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
+                        # Realizar merge
+                        df_mostrar = df_guardado.merge(prop_sub, on=['torre', 'departamento'], how='left')
+                else:
+                    st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
+                    df_mostrar = df_guardado.copy()
+
                 # Función para formatear números con dos decimales
                 def formatear_numero(valor):
                     try:
@@ -127,19 +154,35 @@ with tab1:
                     except (ValueError, TypeError):
                         return str(valor)
 
-                for col in ['torre', 'departamento', 'Mantenimiento']:
-                    if col in df_guardado.columns:
-                        df_guardado[col] = df_guardado[col].apply(formatear_numero)
+                # Aplicar formateo a la columna Mantenimiento (si existe)
+                if 'Mantenimiento' in df_mostrar.columns:
+                    df_mostrar['Mantenimiento'] = df_mostrar['Mantenimiento'].apply(formatear_numero)
+                # Asegurar que torre y departamento sean strings (sin decimales)
+                for col in ['torre', 'departamento']:
+                    if col in df_mostrar.columns:
+                        df_mostrar[col] = df_mostrar[col].apply(formatear_numero)
 
                 # Renombrar columnas para visualización amigable
                 mapeo = {
                     'torre': 'TORRE',
                     'departamento': 'N°DPTO',
+                    'nombre': 'NOMBRES Y APELLIDOS',
+                    'dni': 'DNI',
                     'Mantenimiento': 'MANTENIMIENTO (S/)'
                 }
-                df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
+                # Solo renombrar las que existen
+                df_viz = df_mostrar.rename(columns={col: mapeo[col] for col in df_mostrar.columns if col in mapeo})
                 # Eliminar columnas duplicadas por si acaso
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
+
+                # Orden de columnas deseado
+                columnas_final = ['TORRE', 'N°DPTO', 'NOMBRES Y APELLIDOS', 'DNI', 'MANTENIMIENTO (S/)']
+                # Seleccionar solo las que existen
+                columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
+                # Si no existe la columna de nombre, mostramos solo torre/dpto/mantenimiento
+                if 'NOMBRES Y APELLIDOS' not in df_viz.columns:
+                    columnas_existentes = ['TORRE', 'N°DPTO', 'MANTENIMIENTO (S/)']
+                df_viz = df_viz[columnas_existentes]
 
                 # Índice empezando en 1
                 df_viz = df_viz.reset_index(drop=True)
@@ -147,7 +190,7 @@ with tab1:
 
                 st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
 
-                # Botón de descarga
+                # Botón de descarga (incluye todas las columnas)
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -251,50 +294,22 @@ with tab2:
         elif df_amort is not None and df_amort.empty:
             st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
 
-       # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
+    # ---------- SUBTAB 2: VISUALIZAR AMORTIZACIÓN ----------
     with subtab2:
-        st.subheader("Programaciones Guardadas")
+        st.subheader("Amortizaciones Guardadas")
 
         try:
-            hojas_prog = gsheets.listar_hojas_programacion()
+            hojas_amort = gsheets.listar_hojas_amortizacion()
         except Exception as e:
             st.error(f"No se pudo conectar con Google Sheets: {e}")
-            hojas_prog = []
+            hojas_amort = []
 
-        if hojas_prog:
-            hoja_seleccionada = st.selectbox("Selecciona la programación:", hojas_prog, key="select_prog")
-            df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
+        if hojas_amort:
+            hoja_seleccionada = st.selectbox("Selecciona el período de amortización:", hojas_amort, key="select_amort")
+            df_guardado = gsheets.leer_hoja_amortizacion(hoja_seleccionada)
 
             if not df_guardado.empty:
-                # Cargar propietarios para obtener nombre y DNI
-                prop = gsheets.leer_propietarios()
-                if not prop.empty:
-                    # Detectar columnas de torre y departamento en prop
-                    col_torre_prop = None
-                    col_dpto_prop = None
-                    for col in prop.columns:
-                        if col.lower() == 'torre':
-                            col_torre_prop = col
-                        elif col.lower() in ['departamento', 'dpto', 'n°dpto']:
-                            col_dpto_prop = col
-                    if col_torre_prop is None or col_dpto_prop is None:
-                        st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios. No se mostrarán nombres ni DNI.")
-                        # Si no se pueden identificar, mostrar solo los datos originales
-                        df_mostrar = df_guardado.copy()
-                    else:
-                        # Preparar propietarios para merge
-                        prop_sub = prop[[col_torre_prop, col_dpto_prop, 'nombre', 'dni']].copy()
-                        prop_sub.rename(columns={col_torre_prop: 'torre', col_dpto_prop: 'departamento'}, inplace=True)
-                        # Convertir a numérico para merge correcto
-                        prop_sub['torre'] = pd.to_numeric(prop_sub['torre'], errors='coerce')
-                        prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
-                        # Realizar merge
-                        df_mostrar = df_guardado.merge(prop_sub, on=['torre', 'departamento'], how='left')
-                else:
-                    st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
-                    df_mostrar = df_guardado.copy()
-
-                # Función para formatear números con dos decimales
+                # Función para formatear números sin .0
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -303,51 +318,25 @@ with tab2:
                         if num.is_integer():
                             return str(int(num))
                         else:
-                            return f"{num:.2f}"
+                            return str(num)
                     except (ValueError, TypeError):
                         return str(valor)
 
-                # Aplicar formateo a la columna Mantenimiento (si existe)
-                if 'Mantenimiento' in df_mostrar.columns:
-                    df_mostrar['Mantenimiento'] = df_mostrar['Mantenimiento'].apply(formatear_numero)
-                # Asegurar que torre y departamento sean strings (sin decimales)
-                for col in ['torre', 'departamento']:
-                    if col in df_mostrar.columns:
-                        df_mostrar[col] = df_mostrar[col].apply(formatear_numero)
-
-                # Renombrar columnas para visualización amigable
-                mapeo = {
-                    'torre': 'TORRE',
-                    'departamento': 'N°DPTO',
-                    'nombre': 'NOMBRES Y APELLIDOS',
-                    'dni': 'DNI',
-                    'Mantenimiento': 'MANTENIMIENTO (S/)'
-                }
-                # Solo renombrar las que existen
-                df_viz = df_mostrar.rename(columns={col: mapeo[col] for col in df_mostrar.columns if col in mapeo})
-                # Eliminar columnas duplicadas por si acaso
-                df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
-
-                # Orden de columnas deseado
-                columnas_final = ['TORRE', 'N°DPTO', 'NOMBRES Y APELLIDOS', 'DNI', 'MANTENIMIENTO (S/)']
-                # Seleccionar solo las que existen
-                columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
-                # Si no existe la columna de nombre, mostramos solo torre/dpto/mantenimiento
-                if 'NOMBRES Y APELLIDOS' not in df_viz.columns:
-                    columnas_existentes = ['TORRE', 'N°DPTO', 'MANTENIMIENTO (S/)']
-                df_viz = df_viz[columnas_existentes]
+                for col in ['TORRE', 'N°DPTO', 'CODIGO', 'AMORTIZACION CONVENIO']:
+                    if col in df_guardado.columns:
+                        df_guardado[col] = df_guardado[col].apply(formatear_numero)
 
                 # Índice empezando en 1
-                df_viz = df_viz.reset_index(drop=True)
-                df_viz.index = df_viz.index + 1
+                df_guardado = df_guardado.reset_index(drop=True)
+                df_guardado.index = df_guardado.index + 1
 
-                st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
+                st.dataframe(df_guardado.fillna(""), use_container_width=True, height=600)
 
-                # Botón de descarga (incluye todas las columnas)
+                # Botón de descarga
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_viz.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                    df_guardado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
                 excel_data = output.getvalue()
                 st.download_button(
                     label="📥 Descargar como Excel",
@@ -358,4 +347,4 @@ with tab2:
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
-            st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+            st.info("No hay hojas de amortización guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
