@@ -441,11 +441,16 @@ def leer_pagos_mes(mes: str, anio: int):
     return df_out
 
 def leer_deuda_inicial(anio: int):
-    """
-    Lee la hoja de deuda inicial para el año dado.
-    """
+    """Busca primero la deuda del año exacto; si no existe, intenta con el año anterior."""
     nombre_hoja = f"Deuda Inicial {anio}"
-    return leer_hoja_deuda(nombre_hoja)
+    df = leer_hoja_deuda(nombre_hoja)
+    if df.empty and anio > 2020:
+        # Intenta con el año anterior
+        nombre_hoja_anterior = f"Deuda Inicial {anio-1}"
+        df = leer_hoja_deuda(nombre_hoja_anterior)
+        if not df.empty:
+            st.info(f"Usando deuda del año anterior ({anio-1}) porque no se encontró para {anio}.")
+    return df
 
 def leer_hoja_deuda(nombre_hoja):
     spreadsheet = get_spreadsheet()
