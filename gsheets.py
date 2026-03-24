@@ -2,6 +2,7 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
+import numpy as np  # añadido para las funciones de limpieza
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -403,7 +404,8 @@ def leer_medidores(mes: str, anio: int):
 
 def leer_pagos_mes(mes: str, anio: int):
     """
-    Lee la hoja de pagos y devuelve fecha, torre, departamento, ingresos, n_operacion.
+    Lee la hoja de pagos y devuelve fecha, torre, departamento, ingresos, n_operacion,
+    mantenimiento, amortizacion, medidor.
     """
     nombre_hoja = f"Pagos {mes} {anio}"
     spreadsheet = get_spreadsheet()
@@ -418,11 +420,17 @@ def leer_pagos_mes(mes: str, anio: int):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
+
+    # Mapeo flexible de columnas
     col_fecha = None
     col_torre = None
     col_dpto = None
     col_ing = None
     col_oper = None
+    col_mant = None
+    col_amort = None
+    col_med = None
+
     for col in df.columns:
         col_low = col.lower()
         if 'fecha' in col_low:
@@ -435,14 +443,27 @@ def leer_pagos_mes(mes: str, anio: int):
             col_ing = col
         elif 'operación' in col_low or 'n_operacion' in col_low:
             col_oper = col
+        elif 'mantenimiento' in col_low:
+            col_mant = col
+        elif 'amortizacion' in col_low:
+            col_amort = col
+        elif 'medidor' in col_low:
+            col_med = col
+
+    # Si no se encuentra al menos las columnas esenciales, devolver vacío
     if not (col_fecha and col_torre and col_dpto and col_ing):
         return pd.DataFrame()
+
     df_out = pd.DataFrame()
     df_out['fecha'] = pd.to_datetime(df[col_fecha], errors='coerce')
     df_out['torre'] = pd.to_numeric(df[col_torre], errors='coerce')
     df_out['departamento'] = pd.to_numeric(df[col_dpto], errors='coerce')
     df_out['ingresos'] = pd.to_numeric(df[col_ing], errors='coerce')
     df_out['n_operacion'] = df[col_oper].astype(str) if col_oper else ''
+    df_out['mantenimiento'] = pd.to_numeric(df[col_mant], errors='coerce').fillna(0) if col_mant else 0
+    df_out['amortizacion'] = pd.to_numeric(df[col_amort], errors='coerce').fillna(0) if col_amort else 0
+    df_out['medidor'] = pd.to_numeric(df[col_med], errors='coerce').fillna(0) if col_med else 0
+
     df_out = df_out.sort_values('fecha')
     return df_out
 
@@ -514,7 +535,6 @@ def leer_hoja_programacion(nombre_hoja):
         return pd.DataFrame()
 
     # 3. Buscar columna de monto (Mantenimiento)
-    # Primero intentamos con la columna llamada "Mantenimiento"
     col_monto = None
     for col in df.columns:
         if col.lower() == 'mantenimiento':
@@ -522,7 +542,6 @@ def leer_hoja_programacion(nombre_hoja):
             break
     # Si esa columna está vacía o no tiene datos numéricos, probamos con "Sub Total S/." o cualquier columna que contenga "total"
     if col_monto:
-        # Verificar si la columna tiene valores numéricos (al menos uno)
         test_values = df[col_monto].dropna().head(5).astype(str)
         has_numbers = any(v.replace(',', '.').replace('S/', '').strip().replace(' ', '').replace('.', '').isdigit() for v in test_values if v)
         if not has_numbers:
@@ -530,7 +549,6 @@ def leer_hoja_programacion(nombre_hoja):
     if col_monto is None:
         for col in df.columns:
             if 'total' in col.lower() or 'cuota' in col.lower() or 'pagar' in col.lower():
-                # Verificar que tenga datos numéricos
                 test_values = df[col].dropna().head(5).astype(str)
                 if any(v.replace(',', '.').replace('S/', '').strip().replace(' ', '').replace('.', '').isdigit() for v in test_values if v):
                     col_monto = col
@@ -547,26 +565,16 @@ def leer_hoja_programacion(nombre_hoja):
         if pd.isna(x):
             return np.nan
         s = str(x).strip()
-        # Eliminar símbolo de moneda, espacios, y reemplazar coma por punto
         s = s.replace('S/', '').replace('$', '').replace(' ', '').replace(',', '.')
-        # Si es solo un número, convertir
         try:
             return float(s)
         except:
             return np.nan
 
-    import numpy as np
     df_out['Mantenimiento'] = df_out['Mantenimiento'].apply(clean_number)
     df_out['torre'] = pd.to_numeric(df_out['torre'], errors='coerce')
     df_out['departamento'] = pd.to_numeric(df_out['departamento'], errors='coerce')
 
-    # Eliminar filas sin torre o departamento
     df_out = df_out.dropna(subset=['torre', 'departamento'])
-
-    # Opcional: eliminar filas donde Mantenimiento sea NaN (si se desea)
-    # df_out = df_out.dropna(subset=['Mantenimiento'])
-
-    # Eliminar columnas duplicadas
     df_out = df_out.loc[:, ~df_out.columns.duplicated()]
-
     return df_out
