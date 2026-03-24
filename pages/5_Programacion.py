@@ -57,10 +57,10 @@ with tab1:
                 else:
                     df = pd.read_excel(uploaded_file, sheet_name=0, skiprows=start_row)
                     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-                    
-                    # 🔥 Eliminar columnas duplicadas (por si hay dos con el mismo nombre)
+
+                    # Eliminar columnas duplicadas (por si hay dos con el mismo nombre)
                     df = df.loc[:, ~df.columns.duplicated()]
-                    
+
                     # Buscar columna de total (mantenimiento)
                     col_monto = None
                     for col in df.columns:
@@ -110,11 +110,11 @@ with tab1:
             hojas_prog = []
 
         if hojas_prog:
-            hoja_seleccionada = st.selectbox("Selecciona la programación:", hojas_prog)
+            hoja_seleccionada = st.selectbox("Selecciona la programación:", hojas_prog, key="select_prog")
             df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
 
             if not df_guardado.empty:
-                # Función para formatear números sin .0
+                # Función para formatear números con dos decimales
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -123,7 +123,7 @@ with tab1:
                         if num.is_integer():
                             return str(int(num))
                         else:
-                            return str(num)
+                            return f"{num:.2f}"
                     except (ValueError, TypeError):
                         return str(valor)
 
@@ -137,10 +137,8 @@ with tab1:
                     'departamento': 'N°DPTO',
                     'Mantenimiento': 'MANTENIMIENTO (S/)'
                 }
-                # Solo renombrar las que existen
                 df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
-
-                # Eliminar columnas duplicadas (seguridad)
+                # Eliminar columnas duplicadas por si acaso
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
 
                 # Índice empezando en 1
@@ -166,7 +164,7 @@ with tab1:
         else:
             st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
 
-# ====================== TAB 2: AMORTIZACIÓN (con sus dos sub-pestañas) ======================
+# ====================== TAB 2: AMORTIZACIÓN ======================
 with tab2:
     # Sub‑pestañas dentro de Amortización
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Amortización"])
@@ -253,22 +251,22 @@ with tab2:
         elif df_amort is not None and df_amort.empty:
             st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
 
-        # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
+    # ---------- SUBTAB 2: VISUALIZAR AMORTIZACIÓN ----------
     with subtab2:
-        st.subheader("Programaciones Guardadas")
+        st.subheader("Amortizaciones Guardadas")
 
         try:
-            hojas_prog = gsheets.listar_hojas_programacion()
+            hojas_amort = gsheets.listar_hojas_amortizacion()
         except Exception as e:
             st.error(f"No se pudo conectar con Google Sheets: {e}")
-            hojas_prog = []
+            hojas_amort = []
 
-        if hojas_prog:
-            hoja_seleccionada = st.selectbox("Selecciona la programación:", hojas_prog)
-            df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
+        if hojas_amort:
+            hoja_seleccionada = st.selectbox("Selecciona el período de amortización:", hojas_amort, key="select_amort")
+            df_guardado = gsheets.leer_hoja_amortizacion(hoja_seleccionada)
 
             if not df_guardado.empty:
-                # Función para formatear números con dos decimales
+                # Función para formatear números sin .0
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -277,35 +275,25 @@ with tab2:
                         if num.is_integer():
                             return str(int(num))
                         else:
-                            return f"{num:.2f}"
+                            return str(num)
                     except (ValueError, TypeError):
                         return str(valor)
 
-                for col in ['torre', 'departamento', 'Mantenimiento']:
+                for col in ['TORRE', 'N°DPTO', 'CODIGO', 'AMORTIZACION CONVENIO']:
                     if col in df_guardado.columns:
                         df_guardado[col] = df_guardado[col].apply(formatear_numero)
 
-                # Renombrar columnas para visualización amigable
-                mapeo = {
-                    'torre': 'TORRE',
-                    'departamento': 'N°DPTO',
-                    'Mantenimiento': 'MANTENIMIENTO (S/)'
-                }
-                df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
-                # Eliminar columnas duplicadas por si acaso
-                df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
-
                 # Índice empezando en 1
-                df_viz = df_viz.reset_index(drop=True)
-                df_viz.index = df_viz.index + 1
+                df_guardado = df_guardado.reset_index(drop=True)
+                df_guardado.index = df_guardado.index + 1
 
-                st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
+                st.dataframe(df_guardado.fillna(""), use_container_width=True, height=600)
 
                 # Botón de descarga
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_viz.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                    df_guardado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
                 excel_data = output.getvalue()
                 st.download_button(
                     label="📥 Descargar como Excel",
@@ -316,4 +304,4 @@ with tab2:
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
-            st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+            st.info("No hay hojas de amortización guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
