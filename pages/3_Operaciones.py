@@ -18,27 +18,27 @@ with col2:
 if st.button("Generar Estado de Cuenta", type="primary"):
     with st.spinner("Cargando datos..."):
         try:
-            # ---------- 1. Propietarios ----------
+            # ---------- 1. Propietarios (base) ----------
             prop = gsheets.leer_propietarios()
             if prop.empty:
                 st.error("No se pudo cargar la lista de propietarios.")
                 st.stop()
 
-            # Detectar columnas de torre y departamento
-            col_torre = None
-            col_depto = None
+            # Detectar columnas de torre y departamento en prop
+            col_torre_prop = None
+            col_depto_prop = None
             for col in prop.columns:
                 col_low = col.lower()
                 if 'torre' in col_low:
-                    col_torre = col
+                    col_torre_prop = col
                 if 'departamento' in col_low or 'dpto' in col_low or 'n°dpto' in col_low:
-                    col_depto = col
-            if col_torre is None or col_depto is None:
-                st.error("No se encontraron columnas 'torre' y 'departamento' en propietarios.")
+                    col_depto_prop = col
+            if col_torre_prop is None or col_depto_prop is None:
+                st.error("No se encontraron las columnas 'torre' y 'departamento' en la hoja de propietarios.")
                 st.stop()
 
-            base = prop[[col_torre, col_depto, 'codigo', 'dni', 'nombre']].copy()
-            base.rename(columns={col_torre: 'torre', col_depto: 'departamento'}, inplace=True)
+            base = prop[[col_torre_prop, col_depto_prop, 'codigo', 'dni', 'nombre']].copy()
+            base.rename(columns={col_torre_prop: 'torre', col_depto_prop: 'departamento'}, inplace=True)
             base['torre'] = pd.to_numeric(base['torre'], errors='coerce')
             base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce')
             base = base.dropna(subset=['torre', 'departamento'])
@@ -71,17 +71,31 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     st.warning("No se pudieron identificar columnas en deuda. Se usará deuda cero.")
                     deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
 
-            # ---------- 3. Programación ----------
+            # ---------- 3. Programación del mes ----------
             prog_df = gsheets.leer_programacion(mes, anio)
             if prog_df.empty:
                 st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
-                prog_df = pd.DataFrame(columns=['torre', 'departamento', 'total_programacion'])
+                prog_df = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
             else:
-                # Asegurar columnas numéricas
-                for col in ['torre', 'departamento', 'total_programacion']:
+                # Asegurar que la columna de mantenimiento se llame 'Mantenimiento'
+                # Si ya está, bien; si no, buscar una columna que contenga "total" o "mantenimiento"
+                if 'Mantenimiento' not in prog_df.columns:
+                    col_mant = None
+                    for col in prog_df.columns:
+                        if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
+                            col_mant = col
+                            break
+                    if col_mant:
+                        prog_df.rename(columns={col_mant: 'Mantenimiento'}, inplace=True)
+                    else:
+                        st.warning("No se encontró columna de monto en programación. Se usará 0.")
+                        prog_df['Mantenimiento'] = 0
+                # Seleccionar columnas necesarias
+                prog_df = prog_df[['torre', 'departamento', 'Mantenimiento']].copy()
+                for col in ['torre', 'departamento', 'Mantenimiento']:
                     if col in prog_df.columns:
                         prog_df[col] = pd.to_numeric(prog_df[col], errors='coerce')
-                prog_df = prog_df[['torre', 'departamento', 'total_programacion']].copy()
+                prog_df['Mantenimiento'] = prog_df['Mantenimiento'].fillna(0)
 
             # ---------- 4. Amortización ----------
             amort_df = gsheets.leer_amortizacion(mes, anio)
@@ -93,6 +107,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     if col in amort_df.columns:
                         amort_df[col] = pd.to_numeric(amort_df[col], errors='coerce')
                 amort_df = amort_df[['torre', 'departamento', 'amortizacion']].copy()
+                amort_df['amortizacion'] = amort_df['amortizacion'].fillna(0)
 
             # ---------- 5. Medidores ----------
             med_df = gsheets.leer_medidores(mes, anio)
@@ -104,6 +119,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     if col in med_df.columns:
                         med_df[col] = pd.to_numeric(med_df[col], errors='coerce')
                 med_df = med_df[['torre', 'departamento', 'monto']].copy()
+                med_df['monto'] = med_df['monto'].fillna(0)
 
             # ---------- 6. Pagos ----------
             pagos_df = gsheets.leer_pagos_mes(mes, anio)
@@ -115,6 +131,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     if col in pagos_df.columns:
                         pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce')
                 pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'ingresos', 'n_operacion']].copy()
+                pagos_df['ingresos'] = pagos_df['ingresos'].fillna(0)
 
             # ---------- 7. Unir todos ----------
             # Merge de deuda
@@ -142,7 +159,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 dni = row['dni']
                 nombre = row['nombre']
                 deuda = row['deuda_inicial']
-                mantenimiento = row['total_programacion']
+                mantenimiento = row['Mantenimiento']
                 amort = row['amortizacion']
                 med = row['monto']
 
