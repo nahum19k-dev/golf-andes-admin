@@ -134,26 +134,16 @@ def listar_hojas_pagos():
     return nombres
 
 def leer_pagos_mes(mes: str, anio: int):
-    """
-    Lee la hoja de pagos y devuelve fecha, torre, departamento, ingresos, n_operacion,
-    mantenimiento, amortizacion, medidor.
-    Busca la hoja con nombre exacto "Pagos {mes} {anio}" o con sufijo (2), (3), etc.
-    """
     nombre_base = f"Pagos {mes} {anio}"
     st.write(f"🔍 Buscando hoja: **{nombre_base}**")
-
     spreadsheet = get_spreadsheet()
-    # Obtener todas las hojas
     hojas = spreadsheet.worksheets()
     nombres_hojas = [hoja.title for hoja in hojas]
-
-    # Buscar coincidencias
     coincidencias = [h for h in nombres_hojas if h.startswith(nombre_base)]
     if not coincidencias:
-        st.warning(f"No se encontró ninguna hoja que empiece con '{nombre_base}'")
+        st.warning(f"No se encontró hoja que empiece con '{nombre_base}'")
         st.write("Hojas disponibles:", nombres_hojas)
         return pd.DataFrame()
-    # Tomar la primera coincidencia (la más reciente si están ordenadas, pero no garantizado)
     nombre_hoja = coincidencias[0]
     st.write(f"✅ Usando hoja: **{nombre_hoja}**")
 
@@ -165,17 +155,14 @@ def leer_pagos_mes(mes: str, anio: int):
 
     datos = worksheet.get_all_values()
     if len(datos) < 2:
-        st.warning(f"La hoja {nombre_hoja} tiene menos de 2 filas")
         return pd.DataFrame()
-
     headers = datos[0]
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
+    st.write("📋 Columnas en la hoja:", list(df.columns))
 
-    st.write("📋 Columnas en la hoja de pagos:", list(df.columns))
-
-    # Mapeo flexible de columnas
+    # --- Mapeo flexible por nombre ---
     col_fecha = None
     col_torre = None
     col_dpto = None
@@ -204,7 +191,23 @@ def leer_pagos_mes(mes: str, anio: int):
         elif 'medidor' in col_low:
             col_med = col
 
-    st.write("🔎 Columnas detectadas:")
+    # Si no encuentra por nombre, usar posiciones típicas (basadas en tu estructura de pagos)
+    if not col_fecha and len(df.columns) > 0:
+        col_fecha = df.columns[0]  # primera columna suele ser fecha
+    if not col_torre and len(df.columns) > 1:
+        col_torre = df.columns[1]  # segunda columna suele ser torre
+    if not col_dpto and len(df.columns) > 2:
+        col_dpto = df.columns[2]   # tercera columna suele ser departamento
+    if not col_ing and len(df.columns) > 3:
+        # Buscar columna de ingresos/pagos por posición, pero mejor por nombre
+        for col in df.columns:
+            if 'pagos' in col.lower() or 'ingresos' in col.lower():
+                col_ing = col
+                break
+        if not col_ing and len(df.columns) > 7:  # asumiendo que está después de nombre
+            col_ing = df.columns[7]
+
+    st.write("🔎 Columnas detectadas (final):")
     st.write(f"  fecha: {col_fecha}")
     st.write(f"  torre: {col_torre}")
     st.write(f"  departamento: {col_dpto}")
@@ -214,9 +217,8 @@ def leer_pagos_mes(mes: str, anio: int):
     st.write(f"  amortizacion: {col_amort}")
     st.write(f"  medidor: {col_med}")
 
-    # Si no encuentra las esenciales, devuelve vacío
     if not (col_fecha and col_torre and col_dpto and col_ing):
-        st.error("No se encontraron columnas esenciales (fecha, torre, dpto, ingresos)")
+        st.error("No se encontraron columnas esenciales. Revisa la hoja.")
         return pd.DataFrame()
 
     df_out = pd.DataFrame()
@@ -225,13 +227,12 @@ def leer_pagos_mes(mes: str, anio: int):
     df_out['departamento'] = pd.to_numeric(df[col_dpto], errors='coerce')
     df_out['ingresos'] = pd.to_numeric(df[col_ing], errors='coerce')
     df_out['n_operacion'] = df[col_oper].astype(str) if col_oper else ''
-    # Si no se encontraron las columnas de desglose, se asigna 0
     df_out['mantenimiento'] = pd.to_numeric(df[col_mant], errors='coerce').fillna(0) if col_mant else 0
     df_out['amortizacion'] = pd.to_numeric(df[col_amort], errors='coerce').fillna(0) if col_amort else 0
     df_out['medidor'] = pd.to_numeric(df[col_med], errors='coerce').fillna(0) if col_med else 0
 
     df_out = df_out.sort_values('fecha')
-    st.write("✅ Primeras 5 filas de pagos cargadas:")
+    st.write("✅ Primeras 5 filas de pagos:")
     st.dataframe(df_out.head(5))
     return df_out
 
