@@ -81,26 +81,54 @@ with tab2:
 
     uploaded_file_amort = st.file_uploader("Elige el archivo Excel de amortización", type=["xlsx"], key="amort_file")
     df_amort = None
+
     if uploaded_file_amort is not None:
         try:
-            df_amort = pd.read_excel(uploaded_file_amort, sheet_name=0, header=0)
-            df_amort.columns = df_amort.columns.str.strip().str.replace('\n', ' ')
-            # Eliminar fila de total si existe
-            if 'ITEM' in df_amort.columns:
-                df_amort = df_amort[~df_amort['ITEM'].astype(str).str.contains('TOTAL', case=False, na=False)]
-            if 'APELLIDOS  Y  NOMBRES' in df_amort.columns:
-                df_amort = df_amort[~df_amort['APELLIDOS  Y  NOMBRES'].astype(str).str.contains('TOTAL', case=False, na=False)]
-            df_amort = df_amort.dropna(subset=['TORRE', 'N°DPTO'])
-            st.success(f"Archivo leído: {len(df_amort)} filas válidas")
-            st.dataframe(df_amort.head(8))
-        except Exception as e:
-            st.error(f"Error al leer: {e}")
+            # Leer el archivo completo sin encabezados
+            df_raw = pd.read_excel(uploaded_file_amort, sheet_name=0, header=None)
 
-    if df_amort is not None:
+            # Buscar la fila donde aparece "TORRE" (encabezado)
+            start_row = None
+            for i in range(len(df_raw)):
+                # Convertir toda la fila a string y buscar palabras clave
+                row_str = ' '.join(df_raw.iloc[i].astype(str))
+                if 'TORRE' in row_str or 'N°DPTO' in row_str or 'ITEM' in row_str:
+                    start_row = i
+                    break
+
+            if start_row is None:
+                st.error("No se encontró la fila con encabezados (buscando 'TORRE' o 'N°DPTO').")
+            else:
+                # Leer desde la fila de encabezados
+                df_amort = pd.read_excel(uploaded_file_amort, sheet_name=0, skiprows=start_row)
+                df_amort.columns = df_amort.columns.str.strip().str.replace('\n', ' ')
+
+                # Eliminar fila de total si existe (buscando "TOTAL" en la columna ITEM o APELLIDOS)
+                if 'ITEM' in df_amort.columns:
+                    df_amort = df_amort[~df_amort['ITEM'].astype(str).str.contains('TOTAL', case=False, na=False)]
+                if 'APELLIDOS  Y  NOMBRES' in df_amort.columns:
+                    df_amort = df_amort[~df_amort['APELLIDOS  Y  NOMBRES'].astype(str).str.contains('TOTAL', case=False, na=False)]
+
+                # Eliminar filas sin torre o departamento
+                if 'TORRE' in df_amort.columns:
+                    df_amort = df_amort.dropna(subset=['TORRE'])
+                if 'N°DPTO' in df_amort.columns:
+                    df_amort = df_amort.dropna(subset=['N°DPTO'])
+
+                st.success(f"Archivo leído correctamente: {len(df_amort)} filas válidas")
+                st.write("Vista previa (primeras 10 filas):")
+                st.dataframe(df_amort.head(10))
+
+        except Exception as e:
+            st.error(f"Error al leer el archivo: {str(e)}")
+
+    if df_amort is not None and not df_amort.empty:
         if st.button("Guardar en Google Sheets (Amortización)", type="primary", key="guardar_amort"):
-            with st.spinner("Guardando..."):
+            with st.spinner("Guardando datos de amortización..."):
                 try:
                     nombre_hoja = gsheets.guardar_amortizacion(df_amort, mes_amort, int(anio_amort))
-                    st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                    st.success(f"¡Guardado correctamente en hoja: **{nombre_hoja}**!")
                 except Exception as e:
-                    st.error(f"Error al guardar: {e}")
+                    st.error(f"Error al guardar: {str(e)}")
+    elif df_amort is not None and df_amort.empty:
+        st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
