@@ -18,86 +18,106 @@ with col2:
 if st.button("Generar Estado de Cuenta", type="primary"):
     with st.spinner("Cargando datos..."):
         try:
-            # 1. Cargar propietarios
+            # ---------- 1. Propietarios (base) ----------
             prop = gsheets.leer_propietarios()
             if prop.empty:
                 st.error("No se pudo cargar la lista de propietarios.")
                 st.stop()
 
-            # 2. Deuda inicial del año actual
-            deuda_df = gsheets.leer_deuda_inicial(anio)
-            if deuda_df.empty:
-                st.warning(f"No se encontró hoja 'Deuda Inicial {anio}'. Se usará deuda cero para todos.")
-                deuda_df = pd.DataFrame(columns=['TORRE', 'N°DPTO', 'DNI', 'APELLIDOS  Y  NOMBRES', 'DEUDA AL 31/12/2025'])
-            # Renombrar columnas de deuda para consistencia
-            deuda_df = deuda_df.rename(columns={
-                'TORRE': 'torre',
-                'N°DPTO': 'departamento',
-                'DNI': 'dni',
-                'APELLIDOS  Y  NOMBRES': 'nombre',
-                'DEUDA AL 31/12/2025': 'deuda_inicial'
-            })
-            deuda_df['torre'] = pd.to_numeric(deuda_df['torre'], errors='coerce')
-            deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce')
-            deuda_df['deuda_inicial'] = pd.to_numeric(deuda_df['deuda_inicial'], errors='coerce').fillna(0)
+            # Detectar columnas de torre y departamento en prop
+            col_torre_prop = None
+            col_depto_prop = None
+            for col in prop.columns:
+                col_low = col.lower()
+                if 'torre' in col_low:
+                    col_torre_prop = col
+                if 'departamento' in col_low or 'dpto' in col_low or 'n°dpto' in col_low:
+                    col_depto_prop = col
+            if col_torre_prop is None or col_depto_prop is None:
+                st.error("No se encontraron las columnas 'torre' y 'departamento' en la hoja de propietarios.")
+                st.stop()
 
-            # 3. Programación del mes
-            prog_df = gsheets.leer_programacion(mes, anio)
-            if prog_df.empty:
-                st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
-                prog_df = pd.DataFrame(columns=['torre', 'departamento', 'total_programacion'])
-            prog_df = prog_df[['torre', 'departamento', 'total_programacion']].copy()
-            prog_df['total_programacion'] = pd.to_numeric(prog_df['total_programacion'], errors='coerce').fillna(0)
-
-            # 4. Amortización del mes
-            amort_df = gsheets.leer_amortizacion(mes, anio)
-            if amort_df.empty:
-                st.warning(f"No se encontró amortización para {mes} {anio}. Amortización = 0.")
-                amort_df = pd.DataFrame(columns=['torre', 'departamento', 'amortizacion'])
-            amort_df = amort_df[['torre', 'departamento', 'amortizacion']].copy()
-            amort_df['amortizacion'] = pd.to_numeric(amort_df['amortizacion'], errors='coerce').fillna(0)
-
-            # 5. Medidores del mes
-            med_df = gsheets.leer_medidores(mes, anio)
-            if med_df.empty:
-                st.warning(f"No se encontraron medidores para {mes} {anio}. Medidor = 0.")
-                med_df = pd.DataFrame(columns=['torre', 'departamento', 'monto'])
-            med_df = med_df[['torre', 'departamento', 'monto']].copy()
-            med_df['monto'] = pd.to_numeric(med_df['monto'], errors='coerce').fillna(0)
-
-            # 6. Pagos del mes
-            pagos_df = gsheets.leer_pagos_mes(mes, anio)
-            if pagos_df.empty:
-                st.warning(f"No se encontraron pagos para {mes} {anio}. Se mostrarán solo los cargos.")
-                pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'ingresos', 'n_operacion'])
-            else:
-                pagos_df['ingresos'] = pd.to_numeric(pagos_df['ingresos'], errors='coerce').fillna(0)
-
-            # 7. Unir todos los datos por departamento
-            # Primero obtener todos los departamentos únicos de propietarios (o de las otras tablas)
-            # Usaremos prop como base
-            base = prop[['codigo', 'torre', 'departamento', 'dni', 'nombre']].copy()
+            # Renombrar y seleccionar columnas necesarias
+            base = prop[[col_torre_prop, col_depto_prop, 'codigo', 'dni', 'nombre']].copy()
+            base.rename(columns={col_torre_prop: 'torre', col_depto_prop: 'departamento'}, inplace=True)
             base['torre'] = pd.to_numeric(base['torre'], errors='coerce')
             base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce')
             base = base.dropna(subset=['torre', 'departamento'])
 
-            # Merge de deuda
+            # ---------- 2. Deuda inicial ----------
+            deuda_df = gsheets.leer_deuda_inicial(anio)
+            if deuda_df.empty:
+                st.warning(f"No se encontró hoja 'Deuda Inicial {anio}'. Se usará deuda cero para todos.")
+                deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
+            else:
+                # Detectar columnas en deuda
+                col_torre = None
+                col_depto = None
+                col_deuda = None
+                for col in deuda_df.columns:
+                    col_low = col.lower()
+                    if 'torre' in col_low:
+                        col_torre = col
+                    if 'dpto' in col_low or 'departamento' in col_low or 'n°dpto' in col_low:
+                        col_depto = col
+                    if 'deuda' in col_low:
+                        col_deuda = col
+                if col_torre is None or col_depto is None:
+                    st.warning("No se pudieron identificar columnas de torre/departamento en deuda. Se usará deuda cero.")
+                    deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
+                else:
+                    deuda_df = deuda_df[[col_torre, col_depto, col_deuda]].copy()
+                    deuda_df.rename(columns={col_torre: 'torre', col_depto: 'departamento', col_deuda: 'deuda_inicial'}, inplace=True)
+                    deuda_df['torre'] = pd.to_numeric(deuda_df['torre'], errors='coerce')
+                    deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce')
+                    deuda_df['deuda_inicial'] = pd.to_numeric(deuda_df['deuda_inicial'], errors='coerce').fillna(0)
+
+            # ---------- 3. Programación del mes ----------
+            prog_df = gsheets.leer_programacion(mes, anio)
+            if prog_df.empty:
+                st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
+                prog_df = pd.DataFrame(columns=['torre', 'departamento', 'total_programacion'])
+            else:
+                # prog_df ya debería tener torre, departamento, total_programacion (por la función de lectura)
+                pass
+
+            # ---------- 4. Amortización del mes ----------
+            amort_df = gsheets.leer_amortizacion(mes, anio)
+            if amort_df.empty:
+                st.warning(f"No se encontró amortización para {mes} {anio}. Amortización = 0.")
+                amort_df = pd.DataFrame(columns=['torre', 'departamento', 'amortizacion'])
+            else:
+                pass
+
+            # ---------- 5. Medidores del mes ----------
+            med_df = gsheets.leer_medidores(mes, anio)
+            if med_df.empty:
+                st.warning(f"No se encontraron medidores para {mes} {anio}. Medidor = 0.")
+                med_df = pd.DataFrame(columns=['torre', 'departamento', 'monto'])
+            else:
+                pass
+
+            # ---------- 6. Pagos del mes ----------
+            pagos_df = gsheets.leer_pagos_mes(mes, anio)
+            if pagos_df.empty:
+                st.warning(f"No se encontraron pagos para {mes} {anio}. Se mostrarán solo los cargos.")
+                pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'ingresos', 'n_operacion'])
+
+            # ---------- 7. Unir todos los datos ----------
+            # Hacer merges secuenciales
             base = base.merge(deuda_df, on=['torre', 'departamento'], how='left')
             base['deuda_inicial'] = base['deuda_inicial'].fillna(0)
 
-            # Merge de programación
             base = base.merge(prog_df, on=['torre', 'departamento'], how='left')
             base['total_programacion'] = base['total_programacion'].fillna(0)
 
-            # Merge de amortización
             base = base.merge(amort_df, on=['torre', 'departamento'], how='left')
             base['amortizacion'] = base['amortizacion'].fillna(0)
 
-            # Merge de medidores
             base = base.merge(med_df, on=['torre', 'departamento'], how='left')
             base['monto'] = base['monto'].fillna(0)
 
-            # Ahora, por cada departamento, construir la secuencia de movimientos
+            # Construir movimientos
             movimientos = []
             for _, row in base.iterrows():
                 torre = row['torre']
@@ -116,9 +136,9 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 pagos_dpto = pagos_df[(pagos_df['torre'] == torre) & (pagos_df['departamento'] == dpto)].copy()
                 pagos_dpto = pagos_dpto.sort_values('fecha')
 
-                # Fila de cargo inicial
+                # Fila de cargos
                 movimientos.append({
-                    'fecha': f"01/{mes}/{anio}",  # fecha de emisión de cargos (podríamos usar fecha de programación si existiera)
+                    'fecha': f"01/{mes[:3]}/{anio}",  # fecha aproximada
                     'torre': torre,
                     'departamento': dpto,
                     'codigo': codigo,
@@ -156,7 +176,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             df_movimientos = pd.DataFrame(movimientos)
 
-            # Formatear números (eliminar .0 y usar separadores)
+            # Formatear números
             def fmt_num(valor):
                 try:
                     if pd.isna(valor) or valor == '':
@@ -177,7 +197,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             columnas = ['fecha', 'torre', 'departamento', 'dni', 'nombre', 'deuda_inicial',
                         'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
                         'n_operacion', 'total_pagado', 'saldo']
-            # Usar solo las que existen
             columnas_existentes = [c for c in columnas if c in df_movimientos.columns]
             df_final = df_movimientos[columnas_existentes]
 
