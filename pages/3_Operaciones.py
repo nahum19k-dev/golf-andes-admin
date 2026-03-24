@@ -7,7 +7,6 @@ st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
 
 st.title("📊 Operaciones - Estado de Cuenta por Departamento")
 
-# Selección del período
 col1, col2 = st.columns(2)
 with col1:
     mes = st.selectbox("Mes", ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
@@ -24,7 +23,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 st.error("No se pudo cargar la lista de propietarios.")
                 st.stop()
 
-            # Detectar columnas de torre y departamento
             col_torre_prop = None
             col_depto_prop = None
             for col in prop.columns:
@@ -34,7 +32,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 if 'departamento' in col_low or 'dpto' in col_low or 'n°dpto' in col_low:
                     col_depto_prop = col
             if col_torre_prop is None or col_depto_prop is None:
-                st.error("No se encontraron las columnas 'torre' y 'departamento' en la hoja de propietarios.")
+                st.error("No se encontraron columnas 'torre' y 'departamento' en propietarios.")
                 st.stop()
 
             base = prop[[col_torre_prop, col_depto_prop, 'codigo', 'dni', 'nombre']].copy()
@@ -46,21 +44,15 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             # ========== DEUDA INICIAL ==========
             deuda_df = gsheets.leer_deuda_inicial(anio)
             if deuda_df.empty:
-                st.warning(f"No se encontró hoja 'Deuda Inicial {anio}'. Se usará deuda cero.")
+                st.warning(f"No se encontró 'Deuda Inicial {anio}'. Deuda = 0.")
                 deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
             else:
-                # Identificar columnas en deuda
-                col_t = None
-                col_d = None
-                col_dd = None
+                col_t = None; col_d = None; col_dd = None
                 for col in deuda_df.columns:
                     col_low = col.lower()
-                    if 'torre' in col_low:
-                        col_t = col
-                    elif 'dpto' in col_low or 'departamento' in col_low:
-                        col_d = col
-                    elif 'deuda' in col_low:
-                        col_dd = col
+                    if 'torre' in col_low: col_t = col
+                    elif 'dpto' in col_low or 'departamento' in col_low: col_d = col
+                    elif 'deuda' in col_low: col_dd = col
                 if col_t and col_d and col_dd:
                     deuda_df = deuda_df[[col_t, col_d, col_dd]].copy()
                     deuda_df.rename(columns={col_t: 'torre', col_d: 'departamento', col_dd: 'deuda_inicial'}, inplace=True)
@@ -68,10 +60,10 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce')
                     deuda_df['deuda_inicial'] = pd.to_numeric(deuda_df['deuda_inicial'], errors='coerce').fillna(0)
                 else:
-                    st.warning("No se pudieron identificar columnas en deuda. Se usará deuda cero.")
+                    st.warning("No se identificaron columnas de deuda. Se usará 0.")
                     deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
 
-            # ========== PROGRAMACIÓN (MANTENIMIENTO) ==========
+            # ========== PROGRAMACIÓN ==========
             prog_df = gsheets.leer_programacion(mes, anio)
             if prog_df.empty:
                 st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
@@ -86,7 +78,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     if col_mant:
                         prog_df.rename(columns={col_mant: 'Mantenimiento'}, inplace=True)
                     else:
-                        st.warning("No se encontró columna de monto en programación. Se usará 0.")
                         prog_df['Mantenimiento'] = 0
                 prog_df = prog_df[['torre', 'departamento', 'Mantenimiento']].copy()
                 for col in ['torre', 'departamento', 'Mantenimiento']:
@@ -131,17 +122,10 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 pagos_df['ingresos'] = pagos_df['ingresos'].fillna(0)
 
             # ========== UNIR TABLAS ==========
-            base = base.merge(deuda_df, on=['torre', 'departamento'], how='left')
-            base['deuda_inicial'] = base['deuda_inicial'].fillna(0)
-
-            base = base.merge(prog_df, on=['torre', 'departamento'], how='left')
-            base['Mantenimiento'] = base['Mantenimiento'].fillna(0)
-
-            base = base.merge(amort_df, on=['torre', 'departamento'], how='left')
-            base['amortizacion'] = base['amortizacion'].fillna(0)
-
-            base = base.merge(med_df, on=['torre', 'departamento'], how='left')
-            base['monto'] = base['monto'].fillna(0)
+            base = base.merge(deuda_df, on=['torre', 'departamento'], how='left').fillna(0)
+            base = base.merge(prog_df, on=['torre', 'departamento'], how='left').fillna(0)
+            base = base.merge(amort_df, on=['torre', 'departamento'], how='left').fillna(0)
+            base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna(0)
 
             # ========== CONSTRUIR MOVIMIENTOS ==========
             movimientos = []
@@ -155,7 +139,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 mantenimiento = row['Mantenimiento']
                 amort = row['amortizacion']
                 med = row['monto']
-
                 total_cargos = deuda + mantenimiento + amort + med
 
                 pagos_dpto = pagos_df[(pagos_df['torre'] == torre) & (pagos_df['departamento'] == dpto)].copy()
@@ -217,45 +200,66 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 if col in df_mov.columns:
                     df_mov[col] = df_mov[col].apply(fmt_num)
 
-            columnas = ['fecha', 'torre', 'departamento', 'dni', 'nombre', 'deuda_inicial',
-                        'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
-                        'n_operacion', 'total_pagado', 'saldo']
-            columnas_existentes = [c for c in columnas if c in df_mov.columns]
-            df_final = df_mov[columnas_existentes]
-
-            # Índice empezando en 1
+            # Seleccionar y ordenar columnas finales
+            columnas_orden = ['fecha', 'torre', 'departamento', 'dni', 'nombre', 'deuda_inicial',
+                              'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
+                              'n_operacion', 'total_pagado', 'saldo']
+            columnas_existentes = [c for c in columnas_orden if c in df_mov.columns]
+            df_final = df_mov[columnas_existentes].copy()
             df_final = df_final.reset_index(drop=True)
-            df_final.index = df_final.index + 1
+            # Índice empieza en 1 para la tabla HTML
+            df_final.insert(0, '#', range(1, len(df_final)+1))
 
-            # ========== CABECERA AGRUPADA ==========
-            col_headers = list(df_final.columns)
+            # ========== GENERAR TABLA HTML CON CABECERA AGRUPADA ==========
+            # Identificar posiciones de las columnas que se agrupan
+            col_names = list(df_final.columns)
+            # Las columnas que van bajo "PROGRAMACION" son: deuda_inicial, mantenimiento, amortizacion, medidor, total_programacion
             group_cols = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
-            if all(col in col_headers for col in group_cols):
-                first_idx = col_headers.index(group_cols[0])
-                last_idx = col_headers.index(group_cols[-1])
-                span = last_idx - first_idx + 1
+            # Encontrar índices reales en col_names
+            group_indices = [col_names.index(c) for c in group_cols if c in col_names]
+            first_idx = min(group_indices) if group_indices else 0
+            last_idx = max(group_indices) if group_indices else 0
+            span = last_idx - first_idx + 1
 
-                # Tabla HTML con una celda extra al inicio para la columna del índice
-                html = '<div style="margin-bottom: -15px;">'
-                html += '<table style="width:100%; border-collapse: collapse; margin-bottom: 0;">'
+            # Construir HTML de la tabla
+            html = '<div style="overflow-x: auto;">'
+            html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif;">'
+
+            # Fila de cabecera agrupada
+            html += '<thead>'
+            html += '<tr>'
+            # Celdas antes del grupo
+            for i in range(first_idx):
+                html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
+            # Celda fusionada para PROGRAMACION
+            html += f'<th colspan="{span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 8px;">PROGRAMACION</th>'
+            # Celdas después del grupo
+            for i in range(last_idx+1, len(col_names)):
+                html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
+            html += '</tr>'
+
+            # Fila de nombres de columna
+            html += '<tr>'
+            for col in col_names:
+                html += f'<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6; text-align: left;">{col}</th>'
+            html += '</tr>'
+            html += '</thead><tbody>'
+
+            # Filas de datos
+            for _, row in df_final.iterrows():
                 html += '<tr>'
-                # Celda vacía para la columna del índice (que Streamlit muestra automáticamente)
-                html += '<td style="border: none;">  '
-                # Celdas vacías antes de las columnas agrupadas
-                for i in range(first_idx):
-                    html += '<td style="border: none;">  '
-                # Celda fusionada que abarca las cinco columnas
-                html += f'<td colspan="{span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd;">PROGRAMACION'
-                # Celdas vacías después de las columnas agrupadas
-                for i in range(last_idx+1, len(col_headers)):
-                    html += '<td style="border: none;">  '
+                for col in col_names:
+                    val = row[col]
+                    # Aplicar alineación derecha a números
+                    if col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion', 'total_pagado', 'saldo']:
+                        align = 'right'
+                    else:
+                        align = 'left'
+                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: {align};">{val}</td>'
                 html += '</tr>'
-                html += '</table>'
-                html += '</div>'
-                st.markdown(html, unsafe_allow_html=True)
+            html += '</tbody></table></div>'
 
-            st.subheader(f"Estado de Cuenta - {mes} {anio}")
-            st.dataframe(df_final, use_container_width=True, height=600)
+            st.markdown(html, unsafe_allow_html=True)
 
             # Descarga a Excel
             import io
