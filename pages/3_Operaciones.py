@@ -77,7 +77,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
                 prog_df = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
             else:
-                # Asegurar que la columna de mantenimiento se llame 'Mantenimiento'
                 if 'Mantenimiento' not in prog_df.columns:
                     col_mant = None
                     for col in prog_df.columns:
@@ -223,25 +222,44 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             columnas_existentes = [c for c in columnas if c in df_mov.columns]
             df_final = df_mov[columnas_existentes]
 
-            # Índice empezando en 1
+            # 🔥 Índice empezando en 1
             df_final = df_final.reset_index(drop=True)
             df_final.index = df_final.index + 1
 
-            # Aplicar formato condicional para destacar columnas de programación
-            def highlight_programacion_columns(s):
-                # Columnas que corresponden a la programación
-                programacion_cols = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
-                # Solo aplicar el estilo a esas columnas
-                if s.name in programacion_cols:
-                    return ['background-color: #fff3cd'] * len(s)
-                return [''] * len(s)
+            # ========== CABECERA CON AGRUPACIÓN PARA PROGRAMACIÓN ==========
+            # Identificar las columnas que agrupamos bajo "PROGRAMACION"
+            # Asumimos el orden de columnas después de 'nombre':
+            # índice 5: deuda_inicial, 6: mantenimiento, 7: amortizacion, 8: medidor, 9: total_programacion
+            # Construimos un HTML que muestre una fila con una celda fusionada sobre esas columnas
+            # y debajo las cabeceras normales (que mostrará el dataframe por separado)
+            col_headers = list(df_final.columns)
+            # Encontramos las posiciones de las columnas que queremos agrupar
+            group_cols = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
+            if all(col in col_headers for col in group_cols):
+                # Construir tabla HTML
+                html = '<table style="width:100%; border-collapse: collapse; margin-bottom: 5px;">'
+                # Primera fila: celda fusionada para "PROGRAMACION"
+                html += '<tr>'
+                # Contar columnas antes de la primera columna agrupada
+                first_idx = col_headers.index(group_cols[0])
+                # Celdas vacías antes del grupo
+                for _ in range(first_idx):
+                    html += '<td style="border: none;"></td>'
+                # Celda fusionada que abarca 5 columnas
+                html += '<td colspan="5" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd;">PROGRAMACION</td>'
+                # Celdas vacías después del grupo
+                last_idx = col_headers.index(group_cols[-1])
+                remaining = len(col_headers) - last_idx - 1
+                for _ in range(remaining):
+                    html += '<td style="border: none;"></td>'
+                html += '</tr>'
+                # Segunda fila: podríamos opcionalmente poner las cabeceras normales, pero el dataframe ya las mostrará.
+                # Para no duplicar, cerramos la tabla y dejamos que el dataframe muestre sus columnas.
+                html += '</table>'
+                st.markdown(html, unsafe_allow_html=True)
 
-            df_final_styled = df_final.style.apply(highlight_programacion_columns, axis=0)
-
-            st.subheader(f"Estado de Cuenta - {mes} {anio}")
-            # Mostrar una pequeña leyenda
-            st.markdown("💡 **Nota:** Las columnas con fondo amarillo corresponden a los cargos programados (deuda inicial + mantenimiento + amortización + medidor).")
-            st.dataframe(df_final_styled, use_container_width=True, height=600)
+            # Mostrar dataframe (con sus cabeceras propias)
+            st.dataframe(df_final, use_container_width=True, height=600)
 
             # Descarga
             import io
