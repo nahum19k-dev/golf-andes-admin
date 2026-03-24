@@ -245,19 +245,19 @@ with tab2:
         elif df_amort is not None and df_amort.empty:
             st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
 
-    # ---------- SUBTAB 2: VISUALIZAR AMORTIZACIÓN ----------
+       # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
     with subtab2:
-        st.subheader("Amortizaciones Guardadas")
+        st.subheader("Programaciones Guardadas")
 
         try:
-            hojas_amort = gsheets.listar_hojas_amortizacion()
+            hojas_prog = gsheets.listar_hojas_programacion()
         except Exception as e:
             st.error(f"No se pudo conectar con Google Sheets: {e}")
-            hojas_amort = []
+            hojas_prog = []
 
-        if hojas_amort:
-            hoja_seleccionada = st.selectbox("Selecciona el período de amortización:", hojas_amort)
-            df_guardado = gsheets.leer_hoja_amortizacion(hoja_seleccionada)
+        if hojas_prog:
+            hoja_seleccionada = st.selectbox("Selecciona el período de programación:", hojas_prog)
+            df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
 
             if not df_guardado.empty:
                 # Función para formatear números sin .0
@@ -274,21 +274,36 @@ with tab2:
                         return str(valor)
 
                 # Aplicar formateo a columnas numéricas
-                for col in ['TORRE', 'N°DPTO', 'CODIGO', 'AMORTIZACION CONVENIO']:
+                for col in ['torre', 'departamento', 'Mantenimiento']:
                     if col in df_guardado.columns:
                         df_guardado[col] = df_guardado[col].apply(formatear_numero)
 
+                # Renombrar columnas para visualización
+                rename_map = {}
+                if 'torre' in df_guardado.columns:
+                    rename_map['torre'] = 'TORRE'
+                if 'departamento' in df_guardado.columns:
+                    rename_map['departamento'] = 'N°DPTO'
+                if 'Mantenimiento' in df_guardado.columns:
+                    rename_map['Mantenimiento'] = 'MANTENIMIENTO'
+                df_viz = df_guardado.rename(columns=rename_map)
+
                 # Índice empezando en 1
-                df_guardado = df_guardado.reset_index(drop=True)
-                df_guardado.index = df_guardado.index + 1
+                df_viz = df_viz.reset_index(drop=True)
+                df_viz.index = df_viz.index + 1
 
-                st.dataframe(df_guardado.fillna(""), use_container_width=True, height=600)
+                # Seleccionar solo las columnas que nos interesan
+                columnas_mostrar = ['TORRE', 'N°DPTO', 'MANTENIMIENTO']
+                columnas_existentes = [col for col in columnas_mostrar if col in df_viz.columns]
+                df_mostrar = df_viz[columnas_existentes]
 
-                # Botón de descarga
+                st.dataframe(df_mostrar.fillna(""), use_container_width=True, height=600)
+
+                # Botón de descarga a Excel
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_guardado.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                    df_mostrar.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
                 excel_data = output.getvalue()
 
                 st.download_button(
@@ -300,4 +315,4 @@ with tab2:
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
-            st.info("No hay hojas de amortización guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+            st.info("No hay hojas de programación guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
