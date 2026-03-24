@@ -269,16 +269,14 @@ with tab2:
 
             if not df_guardado.empty:
                 def formatear_numero(valor):
-                    try:
-                        if pd.isna(valor):
-                            return ""
-                        num = float(valor)
-                        if num.is_integer():
-                            return str(int(num))
-                        else:
-                            return str(num)
-                    except (ValueError, TypeError):
-                        return str(valor)
+    try:
+        if pd.isna(valor):
+            return ""
+        num = float(valor)
+        # Redondear a 2 decimales y formatear con separador de miles
+        return f"S/ {num:,.2f}".replace('.00', '')
+    except (ValueError, TypeError):
+        return str(valor)
 
                 for col in ['TORRE', 'N°DPTO', 'CODIGO', 'AMORTIZACION CONVENIO']:
                     if col in df_guardado.columns:
