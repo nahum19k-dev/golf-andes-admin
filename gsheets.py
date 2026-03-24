@@ -235,3 +235,48 @@ def leer_hoja_amortizacion(nombre_hoja):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     return df
+# ====================== FUNCIONES PARA DEUDA INICIAL ======================
+def guardar_deuda_inicial(df: pd.DataFrame, anio: int):
+    nombre_base = f"Deuda Inicial {anio}"
+    spreadsheet = get_spreadsheet()
+    nombre_hoja = nombre_base
+    contador = 2
+    while True:
+        try:
+            spreadsheet.worksheet(nombre_hoja)
+            nombre_hoja = f"{nombre_base} ({contador})"
+            contador += 1
+        except gspread.exceptions.WorksheetNotFound:
+            break
+    nueva_hoja = spreadsheet.add_worksheet(title=nombre_hoja, rows=df.shape[0]+1, cols=df.shape[1])
+
+    df_para_guardar = df.copy()
+    for col in df_para_guardar.columns:
+        if pd.api.types.is_datetime64_any_dtype(df_para_guardar[col]):
+            df_para_guardar[col] = df_para_guardar[col].dt.strftime('%Y-%m-%d')
+        elif df_para_guardar[col].dtype == 'object':
+            df_para_guardar[col] = df_para_guardar[col].apply(
+                lambda x: x.strftime('%Y-%m-%d') if isinstance(x, pd.Timestamp) else x
+            )
+    df_para_guardar = df_para_guardar.astype(str).fillna("")
+    datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
+    nueva_hoja.update(datos, value_input_option="RAW")
+    return nombre_hoja
+
+def listar_hojas_deuda():
+    spreadsheet = get_spreadsheet()
+    hojas = spreadsheet.worksheets()
+    nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Deuda Inicial")]
+    nombres.sort(reverse=True)
+    return nombres
+
+def leer_hoja_deuda(nombre_hoja):
+    spreadsheet = get_spreadsheet()
+    worksheet = spreadsheet.worksheet(nombre_hoja)
+    datos = worksheet.get_all_values()
+    if len(datos) < 2:
+        return pd.DataFrame()
+    headers = datos[0]
+    filas = datos[1:]
+    df = pd.DataFrame(filas, columns=headers)
+    return df
