@@ -18,7 +18,7 @@ with col2:
 if st.button("Generar Estado de Cuenta", type="primary"):
     with st.spinner("Cargando datos..."):
         try:
-            # ---------- 1. Propietarios (base) ----------
+            # ---------- 1. Propietarios ----------
             prop = gsheets.leer_propietarios()
             if prop.empty:
                 st.error("No se pudo cargar la lista de propietarios.")
@@ -71,14 +71,13 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     st.warning("No se pudieron identificar columnas en deuda. Se usará deuda cero.")
                     deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
 
-            # ---------- 3. Programación del mes ----------
+            # ---------- 3. Programación ----------
             prog_df = gsheets.leer_programacion(mes, anio)
             if prog_df.empty:
                 st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
                 prog_df = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
             else:
                 # Asegurar que la columna de mantenimiento se llame 'Mantenimiento'
-                # Si ya está, bien; si no, buscar una columna que contenga "total" o "mantenimiento"
                 if 'Mantenimiento' not in prog_df.columns:
                     col_mant = None
                     for col in prog_df.columns:
@@ -90,7 +89,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     else:
                         st.warning("No se encontró columna de monto en programación. Se usará 0.")
                         prog_df['Mantenimiento'] = 0
-                # Seleccionar columnas necesarias
                 prog_df = prog_df[['torre', 'departamento', 'Mantenimiento']].copy()
                 for col in ['torre', 'departamento', 'Mantenimiento']:
                     if col in prog_df.columns:
@@ -133,24 +131,20 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'ingresos', 'n_operacion']].copy()
                 pagos_df['ingresos'] = pagos_df['ingresos'].fillna(0)
 
-            # ---------- 7. Unir todos ----------
-            # Merge de deuda
+            # ---------- 7. Unir ----------
             base = base.merge(deuda_df, on=['torre', 'departamento'], how='left')
             base['deuda_inicial'] = base['deuda_inicial'].fillna(0)
 
-            # Merge programación
             base = base.merge(prog_df, on=['torre', 'departamento'], how='left')
             base['Mantenimiento'] = base['Mantenimiento'].fillna(0)
 
-            # Merge amortización
             base = base.merge(amort_df, on=['torre', 'departamento'], how='left')
             base['amortizacion'] = base['amortizacion'].fillna(0)
 
-            # Merge medidores
             base = base.merge(med_df, on=['torre', 'departamento'], how='left')
             base['monto'] = base['monto'].fillna(0)
 
-            # ---------- 8. Construir movimientos ----------
+            # ---------- 8. Movimientos ----------
             movimientos = []
             for _, row in base.iterrows():
                 torre = row['torre']
@@ -165,11 +159,9 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
                 total_cargos = deuda + mantenimiento + amort + med
 
-                # Pagos del depto
                 pagos_dpto = pagos_df[(pagos_df['torre'] == torre) & (pagos_df['departamento'] == dpto)].copy()
                 pagos_dpto = pagos_dpto.sort_values('fecha')
 
-                # Fila de cargos
                 movimientos.append({
                     'fecha': f"01/{mes[:3]}/{anio}",
                     'torre': torre,
@@ -209,7 +201,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             df_mov = pd.DataFrame(movimientos)
 
-            # Formateo de números
             def fmt_num(val):
                 try:
                     if pd.isna(val) or val == '':
@@ -226,12 +217,15 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 if col in df_mov.columns:
                     df_mov[col] = df_mov[col].apply(fmt_num)
 
-            # Orden de columnas final
             columnas = ['fecha', 'torre', 'departamento', 'dni', 'nombre', 'deuda_inicial',
                         'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
                         'n_operacion', 'total_pagado', 'saldo']
             columnas_existentes = [c for c in columnas if c in df_mov.columns]
             df_final = df_mov[columnas_existentes]
+
+            # 🔥 Índice empezando en 1
+            df_final = df_final.reset_index(drop=True)
+            df_final.index = df_final.index + 1
 
             st.subheader(f"Estado de Cuenta - {mes} {anio}")
             st.dataframe(df_final, use_container_width=True, height=600)
