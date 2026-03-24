@@ -7,10 +7,10 @@ st.set_page_config(page_title="Programación", page_icon="📅", layout="wide")
 
 st.title("📅 Programación Mensual - Subir desde Excel")
 
-# Crear pestañas
+# Crear pestañas principales
 tab1, tab2 = st.tabs(["📊 Determinación de Cuotas", "💰 Amortización"])
 
-# ====================== TAB 1: DETERMINACIÓN DE CUOTAS (original) ======================
+# ====================== TAB 1: DETERMINACIÓN DE CUOTAS ======================
 with tab1:
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
@@ -91,7 +91,6 @@ with tab2:
         with col2:
             anio_amort = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1, key="anio_amort")
 
-        # Información sobre el formato esperado
         with st.expander("ℹ️ Formato esperado del archivo Excel"):
             st.info("""
             El archivo debe contener las siguientes columnas (en cualquier orden):
@@ -114,7 +113,6 @@ with tab2:
             try:
                 df_raw = pd.read_excel(uploaded_file_amort, sheet_name=0, header=None)
 
-                # Buscar la primera fila que contenga "TORRE" o "N°DPTO" para usarla como encabezado
                 start_row = None
                 for i in range(len(df_raw)):
                     row_str = ' '.join(df_raw.iloc[i].astype(str))
@@ -195,9 +193,9 @@ with tab2:
                     if col in df_guardado.columns:
                         df_guardado[col] = df_guardado[col].apply(formatear_numero)
 
-                # Filtro por fecha (si existiera columna de fecha, pero no hay, así que lo omitimos)
-                # No tenemos fecha en amortización, por lo tanto no mostramos filtro de fechas.
-                # Si en el futuro se agrega, se puede habilitar aquí.
+                # 🔧 Hacer que el índice empiece en 1
+                df_guardado = df_guardado.reset_index(drop=True)
+                df_guardado.index = df_guardado.index + 1
 
                 st.dataframe(df_guardado.fillna(""), use_container_width=True, height=600)
 
