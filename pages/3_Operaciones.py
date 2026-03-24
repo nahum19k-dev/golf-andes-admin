@@ -234,13 +234,13 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             pagos_last = max(pagos_indices) if pagos_indices else 0
             pagos_span = pagos_last - pagos_first + 1
 
-            # Construir HTML
+            # Construir HTML con etiquetas correctas
             html = '<div style="overflow-x: auto;">'
             html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif;">'
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS
-            html += '苦'
+            html += '<tr>'
             # Celdas antes de PROGRAMACION
             for i in range(prog_first):
                 html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
@@ -252,19 +252,18 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             # Celdas después de PAGOS
             for i in range(pagos_last+1, len(col_names)):
                 html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
-            html += '?'
+            html += '</tr>'
 
             # Segunda fila: nombres de columnas
-            html += '苦'
+            html += '<tr>'
             for col in col_names:
                 html += f'<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6; text-align: left;">{col}</th>'
-            html += '?'
-
+            html += '</tr>'
             html += '</thead><tbody>'
 
             # Filas de datos
             for _, row in df_final.iterrows():
-                html += '苦'
+                html += '<tr>'
                 for col in col_names:
                     val = row[col]
                     # Alineación derecha para números
@@ -273,10 +272,9 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                         align = 'right'
                     else:
                         align = 'left'
-                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: {align};">{val}?</td>'
-                html += '?'
-
-            html += '</tbody>?</table></div>'
+                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: {align};">{val}</td>'
+                html += '</tr>'
+            html += '</tbody></table></div>'
 
             st.markdown(html, unsafe_allow_html=True)
 
