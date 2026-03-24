@@ -234,36 +234,37 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             pagos_last = max(pagos_indices) if pagos_indices else 0
             pagos_span = pagos_last - pagos_first + 1
 
-            # Construir HTML con etiquetas correctas
-            html = '<div style="overflow-x: auto;">'
-            html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif;">'
+            # Construir HTML con etiquetas correctas y estilo compacto
+            html = '<div style="overflow-x: auto; max-height: 600px; overflow-y: auto;">'
+            html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">'
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS
-            html += '<tr>'
+            html += '苦'
             # Celdas antes de PROGRAMACION
             for i in range(prog_first):
-                html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
-            html += f'<th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 8px;">PROGRAMACION</th>'
+                html += '<th style="border: 1px solid #ddd; padding: 6px 4px; background-color: #f0f2f6;"></th>'
+            html += f'<th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 6px 4px;">PROGRAMACION</th>'
             # Celdas entre PROGRAMACION y PAGOS
             for i in range(prog_last+1, pagos_first):
-                html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
-            html += f'<th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 8px;">PAGOS</th>'
+                html += '<th style="border: 1px solid #ddd; padding: 6px 4px; background-color: #f0f2f6;"></th>'
+            html += f'<th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 6px 4px;">PAGOS</th>'
             # Celdas después de PAGOS
             for i in range(pagos_last+1, len(col_names)):
-                html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
-            html += '</tr>'
+                html += '<th style="border: 1px solid #ddd; padding: 6px 4px; background-color: #f0f2f6;"></th>'
+            html += '?'
 
             # Segunda fila: nombres de columnas
-            html += '<tr>'
+            html += '苦'
             for col in col_names:
-                html += f'<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6; text-align: left;">{col}</th>'
-            html += '</tr>'
+                html += f'<th style="border: 1px solid #ddd; padding: 6px 4px; background-color: #f0f2f6; text-align: left; font-weight: normal;">{col}</th>'
+            html += '?'
+
             html += '</thead><tbody>'
 
             # Filas de datos
             for _, row in df_final.iterrows():
-                html += '<tr>'
+                html += '苦'
                 for col in col_names:
                     val = row[col]
                     # Alineación derecha para números
@@ -272,9 +273,10 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                         align = 'right'
                     else:
                         align = 'left'
-                    html += f'<td style="border: 1px solid #ddd; padding: 8px; text-align: {align};">{val}</td>'
-                html += '</tr>'
-            html += '</tbody></table></div>'
+                    html += f'<td style="border: 1px solid #ddd; padding: 6px 4px; text-align: {align};">{val}?</td>'
+                html += '?'
+
+            html += '</tbody>?</table></div>'
 
             st.markdown(html, unsafe_allow_html=True)
 
