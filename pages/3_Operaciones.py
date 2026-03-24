@@ -223,12 +223,25 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             columnas_existentes = [c for c in columnas if c in df_mov.columns]
             df_final = df_mov[columnas_existentes]
 
-            # 🔥 Índice empezando en 1
+            # Índice empezando en 1
             df_final = df_final.reset_index(drop=True)
             df_final.index = df_final.index + 1
 
+            # Aplicar formato condicional para destacar columnas de programación
+            def highlight_programacion_columns(s):
+                # Columnas que corresponden a la programación
+                programacion_cols = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
+                # Solo aplicar el estilo a esas columnas
+                if s.name in programacion_cols:
+                    return ['background-color: #fff3cd'] * len(s)
+                return [''] * len(s)
+
+            df_final_styled = df_final.style.apply(highlight_programacion_columns, axis=0)
+
             st.subheader(f"Estado de Cuenta - {mes} {anio}")
-            st.dataframe(df_final, use_container_width=True, height=600)
+            # Mostrar una pequeña leyenda
+            st.markdown("💡 **Nota:** Las columnas con fondo amarillo corresponden a los cargos programados (deuda inicial + mantenimiento + amortización + medidor).")
+            st.dataframe(df_final_styled, use_container_width=True, height=600)
 
             # Descarga
             import io
