@@ -282,8 +282,7 @@ def leer_hoja_deuda(nombre_hoja):
 # ====================== FUNCIONES DE LECTURA PARA OPERACIONES ======================
 def leer_programacion(mes: str, anio: int):
     """
-    Lee la hoja de programación (determinación de cuotas) de forma flexible.
-    Detecta la fila de encabezados y la columna de total.
+    Lee la hoja de programación y devuelve torre, departamento y Mantenimiento.
     """
     nombre_hoja = f"Prog_{mes.upper()}_{anio}"
     spreadsheet = get_spreadsheet()
@@ -291,48 +290,37 @@ def leer_programacion(mes: str, anio: int):
         worksheet = spreadsheet.worksheet(nombre_hoja)
     except gspread.exceptions.WorksheetNotFound:
         return pd.DataFrame()
-
     datos = worksheet.get_all_values()
-    if not datos:
+    if len(datos) < 4:
         return pd.DataFrame()
-
-    # Buscar la fila que contiene "torre" o "departamento" (insensible a mayúsculas)
-    header_row = None
-    for i, row in enumerate(datos):
-        row_str = ' '.join(str(cell) for cell in row)
-        if 'torre' in row_str.lower() or 'departamento' in row_str.lower() or 'dpto' in row_str.lower():
-            header_row = i
-            break
-    if header_row is None:
-        return pd.DataFrame()
-
-    # Leer desde esa fila como encabezados
-    headers = datos[header_row]
-    filas = datos[header_row+1:]
+    headers = datos[3]
+    filas = datos[4:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-
-    # Buscar columna de torre, departamento y total
+    # Buscar columna de total (puede llamarse "Total S/.", "Mantenimiento", etc.)
+    col_total = None
+    for col in df.columns:
+        col_low = col.lower()
+        if 'total' in col_low or 'mantenimiento' in col_low or 'cuota' in col_low or 'pagar' in col_low:
+            col_total = col
+            break
+    if col_total is None:
+        return pd.DataFrame()
+    # Buscar columnas de torre y departamento
     col_torre = None
     col_dpto = None
-    col_total = None
     for col in df.columns:
         col_low = col.lower()
         if 'torre' in col_low:
             col_torre = col
         elif 'departamento' in col_low or 'dpto' in col_low:
             col_dpto = col
-        elif 'total' in col_low or 's/.' in col_low or 'pagar' in col_low:
-            col_total = col
-
-    if not (col_torre and col_dpto and col_total):
+    if not (col_torre and col_dpto):
         return pd.DataFrame()
-
     df_out = pd.DataFrame()
     df_out['torre'] = pd.to_numeric(df[col_torre], errors='coerce')
     df_out['departamento'] = pd.to_numeric(df[col_dpto], errors='coerce')
-    df_out['total_programacion'] = pd.to_numeric(df[col_total], errors='coerce')
-
+    df_out['Mantenimiento'] = pd.to_numeric(df[col_total], errors='coerce')
     return df_out
 
 def leer_amortizacion(mes: str, anio: int):
