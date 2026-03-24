@@ -111,6 +111,15 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             # ========== PAGOS ==========
             pagos_df = gsheets.leer_pagos_mes(mes, anio)
+            st.write("### 🔍 Depuración de pagos cargados")
+            st.write(f"Número de filas en pagos_df: {len(pagos_df)}")
+            if not pagos_df.empty:
+                st.write("Primeras 5 filas de pagos_df:")
+                st.dataframe(pagos_df.head(5))
+                st.write("Columnas disponibles en pagos_df:", list(pagos_df.columns))
+            else:
+                st.warning("El DataFrame de pagos está vacío")
+
             if pagos_df.empty:
                 st.warning(f"No se encontraron pagos para {mes} {anio}.")
                 pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
@@ -240,7 +249,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS
-            html += '<tr>'
+            html += '苦'
             # Celdas antes de PROGRAMACION
             for i in range(prog_first):
                 html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f0f2f6;"></th>'
