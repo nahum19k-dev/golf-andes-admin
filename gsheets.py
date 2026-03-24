@@ -477,6 +477,7 @@ def listar_hojas_programacion():
     nombres.sort(reverse=True)
     return nombres
 
+# En gsheets.py, reemplazar leer_hoja_programacion por:
 def leer_hoja_programacion(nombre_hoja):
     spreadsheet = get_spreadsheet()
     worksheet = spreadsheet.worksheet(nombre_hoja)
@@ -486,18 +487,42 @@ def leer_hoja_programacion(nombre_hoja):
     headers = datos[3]
     filas = datos[4:]
     df = pd.DataFrame(filas, columns=headers)
-    df.columns = df.columns.str.strip().str.replace('\n', ' ')
-    # Buscar columna de total y renombrar a "Mantenimiento"
+    # Limpiar nombres de columnas
+    df.columns = df.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
+    # Buscar columna de total (puede llamarse "Total S/.", "Mantenimiento", etc.)
     col_total = None
     for col in df.columns:
-        if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
+        col_low = col.lower()
+        if 'total' in col_low or 'mantenimiento' in col_low or 'cuota' in col_low or 'pagar' in col_low:
             col_total = col
             break
-    if col_total and col_total != 'Mantenimiento':
-        if 'Mantenimiento' in df.columns:
-            df = df.drop(columns=['Mantenimiento'])
-        df.rename(columns={col_total: 'Mantenimiento'}, inplace=True)
+    # Si no se encuentra columna de total, devolver DataFrame vacío
+    if col_total is None:
+        return pd.DataFrame()
+    # Renombrar la columna de total a "Mantenimiento", eliminando si ya existe
+    if 'Mantenimiento' in df.columns and col_total != 'Mantenimiento':
+        df = df.drop(columns=['Mantenimiento'])
+    df = df.rename(columns={col_total: 'Mantenimiento'})
+    # Buscar columnas de torre y departamento
+    col_torre = None
+    col_dpto = None
+    for col in df.columns:
+        col_low = col.lower()
+        if 'torre' in col_low:
+            col_torre = col
+        elif 'departamento' in col_low or 'dpto' in col_low:
+            col_dpto = col
+    # Si no se encuentran, devolver vacío
+    if col_torre is None or col_dpto is None:
+        return pd.DataFrame()
+    # Seleccionar solo las columnas necesarias
+    df_out = df[[col_torre, col_dpto, 'Mantenimiento']].copy()
+    df_out.columns = ['torre', 'departamento', 'Mantenimiento']
+    # Convertir a numérico
     for col in ['torre', 'departamento', 'Mantenimiento']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    return df
+        df_out[col] = pd.to_numeric(df_out[col], errors='coerce')
+    # Eliminar filas con valores nulos en torre o departamento
+    df_out = df_out.dropna(subset=['torre', 'departamento'])
+    # Eliminar duplicados de columnas por si acaso
+    df_out = df_out.loc[:, ~df_out.columns.duplicated()]
+    return df_out
