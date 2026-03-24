@@ -495,6 +495,9 @@ def leer_hoja_programacion(nombre_hoja):
             col_total = col
             break
     if col_total and col_total != 'Mantenimiento':
+        # Si ya existe una columna "Mantenimiento", la eliminamos para evitar duplicados
+        if 'Mantenimiento' in df.columns:
+            df = df.drop(columns=['Mantenimiento'])
         df.rename(columns={col_total: 'Mantenimiento'}, inplace=True)
     # Convertir columnas numéricas
     for col in ['torre', 'departamento', 'Mantenimiento']:
