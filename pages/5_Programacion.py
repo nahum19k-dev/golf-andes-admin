@@ -77,24 +77,41 @@ with tab1:
                                 df = df.drop(columns=['Mantenimiento'])
                             df.rename(columns={col_monto: 'Mantenimiento'}, inplace=True)
 
-                        # Identificar columnas de torre y departamento
+                        # Identificar columnas de torre y departamento (priorizando nombres exactos)
                         col_torre = None
                         col_dpto = None
+                        # Primero buscar coincidencias exactas
                         for col in df.columns:
-                            if 'torre' in col.lower():
+                            if col.lower() == 'torre':
                                 col_torre = col
-                            elif 'departamento' in col.lower() or 'dpto' in col.lower():
+                            if col.lower() == 'departamento':
                                 col_dpto = col
+                        # Si no se encontraron exactas, buscar que contengan la palabra
+                        if col_torre is None:
+                            for col in df.columns:
+                                if 'torre' in col.lower():
+                                    col_torre = col
+                                    break
+                        if col_dpto is None:
+                            for col in df.columns:
+                                if 'departamento' in col.lower() or 'dpto' in col.lower():
+                                    col_dpto = col
+                                    break
                         if col_torre is None or col_dpto is None:
                             st.error("No se encontraron las columnas 'torre' y 'departamento'.")
                         else:
                             # Quedarnos solo con las tres columnas necesarias
                             df = df[[col_torre, col_dpto, 'Mantenimiento']].copy()
                             df.columns = ['torre', 'departamento', 'Mantenimiento']
-                            # Convertir a numérico (opcional)
+                            # Convertir a numérico
                             df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
                             df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
                             df['Mantenimiento'] = pd.to_numeric(df['Mantenimiento'], errors='coerce')
+                            # Eliminar filas donde torre o departamento no sean numéricos (NaN)
+                            df = df.dropna(subset=['torre', 'departamento'])
+                            # Si la columna Mantenimiento está vacía, mostrar advertencia
+                            if df['Mantenimiento'].isna().all():
+                                st.warning("La columna de mantenimiento no contiene datos numéricos. Verifica que la columna seleccionada sea la correcta.")
 
                             st.success(f"Archivo leído: {len(df)} filas")
                             st.write("Vista previa (primeras 8 filas):")
