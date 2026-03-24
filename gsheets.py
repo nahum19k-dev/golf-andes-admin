@@ -270,7 +270,10 @@ def listar_hojas_deuda():
 
 def leer_hoja_deuda(nombre_hoja):
     spreadsheet = get_spreadsheet()
-    worksheet = spreadsheet.worksheet(nombre_hoja)
+    try:
+        worksheet = spreadsheet.worksheet(nombre_hoja)
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
     datos = worksheet.get_all_values()
     if len(datos) < 2:
         return pd.DataFrame()
@@ -282,7 +285,8 @@ def leer_hoja_deuda(nombre_hoja):
 # ====================== FUNCIONES DE LECTURA PARA OPERACIONES ======================
 def leer_programacion(mes: str, anio: int):
     """
-    Lee la hoja de programación y devuelve torre, departamento y Mantenimiento.
+    Lee la hoja de programación (creada con crear_y_guardar_programacion)
+    y devuelve torre, departamento y Mantenimiento.
     """
     nombre_hoja = f"Prog_{mes.upper()}_{anio}"
     spreadsheet = get_spreadsheet()
@@ -293,11 +297,12 @@ def leer_programacion(mes: str, anio: int):
     datos = worksheet.get_all_values()
     if len(datos) < 4:
         return pd.DataFrame()
-    headers = datos[3]
-    filas = datos[4:]
+    # encabezados en fila 3 (índice 2), datos desde fila 4 (índice 3)
+    headers = datos[2]
+    filas = datos[3:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-    # Buscar columna de total (puede llamarse "Total S/.", "Mantenimiento", etc.)
+    # Buscar columna de total (mantenimiento)
     col_total = None
     for col in df.columns:
         col_low = col.lower()
@@ -448,39 +453,33 @@ def leer_deuda_inicial(anio: int):
     nombre_hoja = f"Deuda Inicial {anio}"
     df = leer_hoja_deuda(nombre_hoja)
     if df.empty and anio > 2020:
-        # Intenta con el año anterior
         nombre_hoja_anterior = f"Deuda Inicial {anio-1}"
         df = leer_hoja_deuda(nombre_hoja_anterior)
         if not df.empty:
             st.info(f"Usando deuda del año anterior ({anio-1}) porque no se encontró para {anio}.")
     return df
 
-def leer_hoja_deuda(nombre_hoja):
-    spreadsheet = get_spreadsheet()
-    try:
-        worksheet = spreadsheet.worksheet(nombre_hoja)
-    except gspread.exceptions.WorksheetNotFound:
-        return pd.DataFrame()
-    datos = worksheet.get_all_values()
-    if len(datos) < 2:
-        return pd.DataFrame()
-    headers = datos[0]
-    filas = datos[1:]
-    df = pd.DataFrame(filas, columns=headers)
-    return df
 # ====================== FUNCIONES PARA VISUALIZAR PROGRAMACIÓN ======================
-# Dentro de gsheets.py, al final, añade:
+def listar_hojas_programacion():
+    spreadsheet = get_spreadsheet()
+    hojas = spreadsheet.worksheets()
+    nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Prog_")]
+    nombres.sort(reverse=True)
+    return nombres
+
 def leer_hoja_programacion(nombre_hoja):
+    """
+    Lee una hoja de programación (creada con crear_y_guardar_programacion)
+    y devuelve DataFrame con columnas: torre, departamento, Mantenimiento.
+    """
     spreadsheet = get_spreadsheet()
     worksheet = spreadsheet.worksheet(nombre_hoja)
     datos = worksheet.get_all_values()
-    if len(datos) < 3:
+    if len(datos) < 4:
         return pd.DataFrame()
-    # Los encabezados están en la tercera fila (índice 2)
-    headers = datos[2]   # fila 2 (A3) -> encabezados
-    filas = datos[3:]    # desde la cuarta fila (A4) -> datos
-    if not filas:
-        return pd.DataFrame()
+    # encabezados en fila 3 (índice 2), datos desde fila 4 (índice 3)
+    headers = datos[2]
+    filas = datos[3:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
     # Buscar columna de total y renombrar a "Mantenimiento"
@@ -489,45 +488,12 @@ def leer_hoja_programacion(nombre_hoja):
         if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
             col_total = col
             break
-    if col_total and col_total != 'Mantenimiento':
-        # Evitar duplicados
+    if col_total is None:
+        return pd.DataFrame()
+    if col_total != 'Mantenimiento':
         if 'Mantenimiento' in df.columns:
             df = df.drop(columns=['Mantenimiento'])
         df.rename(columns={col_total: 'Mantenimiento'}, inplace=True)
-    # Convertir columnas numéricas
-    for col in ['torre', 'departamento', 'Mantenimiento']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    # Eliminar columnas duplicadas (por si acaso)
-    df = df.loc[:, ~df.columns.duplicated()]
-    return df
-
-# En gsheets.py, reemplazar leer_hoja_programacion por:
-def leer_hoja_programacion(nombre_hoja):
-    spreadsheet = get_spreadsheet()
-    worksheet = spreadsheet.worksheet(nombre_hoja)
-    datos = worksheet.get_all_values()
-    if len(datos) < 4:
-        return pd.DataFrame()
-    headers = datos[3]
-    filas = datos[4:]
-    df = pd.DataFrame(filas, columns=headers)
-    # Limpiar nombres de columnas
-    df.columns = df.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
-    # Buscar columna de total (puede llamarse "Total S/.", "Mantenimiento", etc.)
-    col_total = None
-    for col in df.columns:
-        col_low = col.lower()
-        if 'total' in col_low or 'mantenimiento' in col_low or 'cuota' in col_low or 'pagar' in col_low:
-            col_total = col
-            break
-    # Si no se encuentra columna de total, devolver DataFrame vacío
-    if col_total is None:
-        return pd.DataFrame()
-    # Renombrar la columna de total a "Mantenimiento", eliminando si ya existe
-    if 'Mantenimiento' in df.columns and col_total != 'Mantenimiento':
-        df = df.drop(columns=['Mantenimiento'])
-    df = df.rename(columns={col_total: 'Mantenimiento'})
     # Buscar columnas de torre y departamento
     col_torre = None
     col_dpto = None
@@ -537,7 +503,6 @@ def leer_hoja_programacion(nombre_hoja):
             col_torre = col
         elif 'departamento' in col_low or 'dpto' in col_low:
             col_dpto = col
-    # Si no se encuentran, devolver vacío
     if col_torre is None or col_dpto is None:
         return pd.DataFrame()
     # Seleccionar solo las columnas necesarias
@@ -548,12 +513,6 @@ def leer_hoja_programacion(nombre_hoja):
         df_out[col] = pd.to_numeric(df_out[col], errors='coerce')
     # Eliminar filas con valores nulos en torre o departamento
     df_out = df_out.dropna(subset=['torre', 'departamento'])
-    # Eliminar duplicados de columnas por si acaso
+    # Eliminar columnas duplicadas por si acaso
     df_out = df_out.loc[:, ~df_out.columns.duplicated()]
     return df_out
-def listar_hojas_programacion():
-    spreadsheet = get_spreadsheet()
-    hojas = spreadsheet.worksheets()
-    nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Prog_")]
-    nombres.sort(reverse=True)
-    return nombres
