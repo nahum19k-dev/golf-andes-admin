@@ -11,39 +11,6 @@ st.title("📅 Programación Mensual - Subir desde Excel")
 tab1, tab2 = st.tabs(["📊 Programación Mantenimiento", "💰 Amortización"])
 
 # ====================== TAB 1: PROGRAMACIÓN MANTENIMIENTO ======================
-with tab1:
-    # Sub‑pestañas dentro de Programación Mantenimiento
-    subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Programación"])
-
-    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
-    with subtab1:
-        col1, col2, col3 = st.columns([2, 2, 1])
-        with col1:
-            mes = st.selectbox(
-                "Mes a programar",
-                ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                 "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"]
-            )
-        with col2:
-            anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
-        with col3:
-            n_deptos = st.number_input("N° Departamentos (divisor)", min_value=300, max_value=500, value=380, step=1)
-
-        mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes) + 1
-        fecha_emision_def = datetime(anio, mes_num, 23)
-        fecha_venc_def = fecha_emision_def + timedelta(days=15)
-
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            fecha_emision = st.date_input("Fecha de Emisión", value=fecha_emision_def)
-        with col_f2:
-            fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def)
-
-        st.divider()
-        st.subheader("Subir archivo Excel de determinación de cuotas")
-        uploaded_file = st.file_uploader("Elige el archivo .xlsx", type=["xlsx"], key="det_cuotas")
-        df = None
-
         if uploaded_file is not None:
             try:
                 df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
@@ -57,38 +24,31 @@ with tab1:
                 else:
                     df = pd.read_excel(uploaded_file, sheet_name=0, skiprows=start_row)
                     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-                    # Buscar columna de total y renombrar a "Mantenimiento"
+                    
+                    # 🔥 ELIMINAR COLUMNAS DUPLICADAS (antes de renombrar)
+                    df = df.loc[:, ~df.columns.duplicated()]
+                    
+                    # Buscar la columna de total (mantenimiento)
                     col_monto = None
                     for col in df.columns:
-                        if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
+                        col_low = col.lower()
+                        if 'total' in col_low or 'mantenimiento' in col_low or 'cuota' in col_low:
                             col_monto = col
                             break
                     if col_monto is None:
                         st.error("No se encontró la columna de monto total. Verifica que el Excel tenga una columna con 'Total' o 'Mantenimiento'.")
                     else:
-                        df.rename(columns={col_monto: 'Mantenimiento'}, inplace=True)
+                        # Si la columna encontrada no se llama "Mantenimiento", la renombramos
+                        if col_monto != 'Mantenimiento':
+                            # Si ya existe una columna "Mantenimiento", la eliminamos antes de renombrar
+                            if 'Mantenimiento' in df.columns:
+                                df = df.drop(columns=['Mantenimiento'])
+                            df.rename(columns={col_monto: 'Mantenimiento'}, inplace=True)
                         st.success(f"Archivo leído: {len(df)} filas")
                         st.write("Vista previa (primeras 8 filas):")
                         st.dataframe(df.head(8))
             except Exception as e:
                 st.error(f"Error al leer: {e}")
-
-        if df is not None:
-            periodo_key = f"{mes.upper()}_{int(anio)}"
-            if gsheets.existe_programacion(periodo_key):
-                st.error(f"⚠️ Ya existe una programación para {mes} {anio}")
-                st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
-            else:
-                if st.button("Guardar en Google Sheets", type="primary", key="guardar_det_cuotas"):
-                    with st.spinner("Guardando..."):
-                        try:
-                            nombre_hoja = gsheets.crear_y_guardar_programacion(
-                                df, periodo_key, mes, int(anio)
-                            )
-                            st.success(f"Guardado en hoja: **{nombre_hoja}**")
-                        except Exception as e:
-                            st.error(f"Error al guardar: {e}")
-
     # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
     with subtab2:
         st.subheader("Programaciones Guardadas")
