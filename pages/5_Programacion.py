@@ -71,15 +71,34 @@ with tab1:
                     if col_monto is None:
                         st.error("No se encontró la columna de monto total. Verifica que el Excel tenga una columna con 'Total' o 'Mantenimiento'.")
                     else:
-                        # Si la columna encontrada no se llama "Mantenimiento", la renombramos
+                        # Renombrar columna de total a "Mantenimiento"
                         if col_monto != 'Mantenimiento':
-                            # Si ya existe una columna "Mantenimiento", la eliminamos antes de renombrar
                             if 'Mantenimiento' in df.columns:
                                 df = df.drop(columns=['Mantenimiento'])
                             df.rename(columns={col_monto: 'Mantenimiento'}, inplace=True)
-                        st.success(f"Archivo leído: {len(df)} filas")
-                        st.write("Vista previa (primeras 8 filas):")
-                        st.dataframe(df.head(8))
+
+                        # Identificar columnas de torre y departamento
+                        col_torre = None
+                        col_dpto = None
+                        for col in df.columns:
+                            if 'torre' in col.lower():
+                                col_torre = col
+                            elif 'departamento' in col.lower() or 'dpto' in col.lower():
+                                col_dpto = col
+                        if col_torre is None or col_dpto is None:
+                            st.error("No se encontraron las columnas 'torre' y 'departamento'.")
+                        else:
+                            # Quedarnos solo con las tres columnas necesarias
+                            df = df[[col_torre, col_dpto, 'Mantenimiento']].copy()
+                            df.columns = ['torre', 'departamento', 'Mantenimiento']
+                            # Convertir a numérico (opcional)
+                            df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+                            df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+                            df['Mantenimiento'] = pd.to_numeric(df['Mantenimiento'], errors='coerce')
+
+                            st.success(f"Archivo leído: {len(df)} filas")
+                            st.write("Vista previa (primeras 8 filas):")
+                            st.dataframe(df.head(8))
             except Exception as e:
                 st.error(f"Error al leer: {e}")
 
