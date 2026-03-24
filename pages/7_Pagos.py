@@ -33,15 +33,39 @@ with tab1:
             df_raw = df_raw.iloc[:, 1:]                    # quita la primera columna NaN/Unnamed
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
-            # Renombrar columnas clave
-            df = df_raw.rename(columns={
-                'Fecha': 'fecha',
-                'DESCRIPCION OPERACIONES': 'descripcion',
-                'N°OPERACIÓN': 'n_operacion',
-                'INGRESOS': 'ingresos'
-            })
+            # Renombrar columnas clave (nombres exactos que aparecen en el nuevo Excel)
+            # Usamos un mapeo que busca nombres, no solo renombrar fijo
+            rename_map = {}
+            for col in df_raw.columns:
+                col_low = col.lower()
+                if 'fecha' in col_low:
+                    rename_map[col] = 'fecha'
+                elif 'descripcion' in col_low or 'operaciones' in col_low:
+                    rename_map[col] = 'descripcion'
+                elif 'operación' in col_low or 'n°operación' in col_low:
+                    rename_map[col] = 'n_operacion'
+                elif 'mantenimiento' in col_low:
+                    rename_map[col] = 'mantenimiento'
+                elif 'amortizacion' in col_low:
+                    rename_map[col] = 'amortizacion'
+                elif 'medidor' in col_low:
+                    rename_map[col] = 'medidor'
 
-            # Extraer código (últimos 5 dígitos)
+            # Si no se encontró alguna columna clave, usar las que están en el archivo
+            df = df_raw.rename(columns=rename_map)
+
+            # Asegurar que existan las columnas necesarias
+            if 'mantenimiento' not in df.columns:
+                df['mantenimiento'] = 0
+            if 'amortizacion' not in df.columns:
+                df['amortizacion'] = 0
+            if 'medidor' not in df.columns:
+                df['medidor'] = 0
+
+            # Calcular monto total como suma de los tres conceptos
+            df['ingresos'] = df['mantenimiento'].fillna(0) + df['amortizacion'].fillna(0) + df['medidor'].fillna(0)
+
+            # Extraer código (últimos 5 dígitos) desde la descripción
             def extraer_codigo(desc):
                 if pd.isna(desc):
                     return None
@@ -67,7 +91,7 @@ with tab1:
                 st.error("No se encontró columna de departamento en Propietarios. Las columnas disponibles son: " + ", ".join(prop.columns))
                 st.stop()
 
-            # Detectar columna de código (puede ser 'codigo' o 'codigo_prop' etc.)
+            # Detectar columna de código
             codigo_col = 'codigo'
             if codigo_col not in prop.columns:
                 for col in prop.columns:
@@ -107,21 +131,38 @@ with tab1:
 
             if not df_coinciden.empty:
                 st.markdown("### Pagos que coincidieron")
-                cols = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'ingresos']
+                # Seleccionar columnas a mostrar
+                cols_mostrar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'mantenimiento', 'amortizacion', 'medidor', 'ingresos']
                 if dni_col:
-                    cols.insert(6, dni_col)
-                st.dataframe(df_coinciden[cols].fillna(""), use_container_width=True, height=400)
+                    cols_mostrar.insert(6, dni_col)  # insertar DNI después de nombre
+                # Formatear números para mostrar
+                for col in ['mantenimiento', 'amortizacion', 'medidor', 'ingresos']:
+                    if col in df_coinciden.columns:
+                        df_coinciden[col] = df_coinciden[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
+                st.dataframe(df_coinciden[cols_mostrar].fillna(""), use_container_width=True, height=400)
 
             if not df_no_coinciden.empty:
                 st.markdown("### Pagos sin coincidencia (revisar)")
-                st.dataframe(df_no_coinciden[['fecha', 'descripcion', 'codigo', 'ingresos']].fillna(""),
-                             use_container_width=True, height=300)
+                cols_no = ['fecha', 'descripcion', 'codigo', 'mantenimiento', 'amortizacion', 'medidor', 'ingresos']
+                st.dataframe(df_no_coinciden[cols_no].fillna(""), use_container_width=True, height=300)
 
-            # Botón guardar (usa la nueva función guardar_pagos)
+            # Botón guardar
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
+                    # Seleccionar columnas a guardar (sin los totales calculados redundantes)
+                    columnas_guardar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'dni', 'mantenimiento', 'amortizacion', 'medidor', 'n_operacion']
+                    # Solo las que existen
+                    cols_existentes = [c for c in columnas_guardar if c in df_coinciden.columns]
+                    df_guardar = df_coinciden[cols_existentes].copy()
+                    # Convertir fechas a string si es datetime
+                    if 'fecha' in df_guardar.columns:
+                        df_guardar['fecha'] = pd.to_datetime(df_guardar['fecha']).dt.strftime('%Y-%m-%d')
+                    # Convertir números a string (para evitar problemas)
+                    for col in ['mantenimiento', 'amortizacion', 'medidor']:
+                        if col in df_guardar.columns:
+                            df_guardar[col] = df_guardar[col].apply(lambda x: f"{float(x):.2f}" if pd.notna(x) else "")
                     nombre_hoja = gsheets.guardar_pagos(
-                        df=df_coinciden,
+                        df=df_guardar,
                         mes=mes,
                         anio=int(anio)
                     )
@@ -131,6 +172,7 @@ with tab1:
 
         except Exception as e:
             st.error(f"Error al procesar: {str(e)}")
+
 # ====================== TAB 2: VISUALIZAR PAGOS ORDENADOS ======================
 with tab2:
     st.subheader("📊 Visualizar Pagos Ordenados")
@@ -154,7 +196,10 @@ with tab2:
                 'nombre': 'NOMBRES Y APELLIDOS',
                 'ingresos': 'PAGOS',
                 'n_operacion': 'N°OPERACIÓN',
-                'dni': 'DNI'
+                'dni': 'DNI',
+                'mantenimiento': 'MANTENIMIENTO',
+                'amortizacion': 'AMORTIZACIÓN',
+                'medidor': 'MEDIDOR'
             }
             df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
@@ -180,12 +225,10 @@ with tab2:
             else:
                 df_filtrado = df_viz.copy()
 
-            # ---------- Formateo de columnas para presentación ----------
-            # Fecha: quitar hora
+            # Formateo de columnas
             if 'FECHA' in df_filtrado.columns and not df_filtrado['FECHA'].isna().all():
                 df_filtrado['FECHA'] = df_filtrado['FECHA'].dt.strftime('%Y-%m-%d')
 
-            # Función para convertir números sin decimales a enteros
             def formatear_numero(valor):
                 try:
                     if pd.isna(valor):
@@ -198,13 +241,13 @@ with tab2:
                 except (ValueError, TypeError):
                     return str(valor)
 
-            # Aplicar formateo a columnas numéricas
-            for col in ['TORRE', 'N°DPTO', 'PAGOS', 'N°OPERACIÓN']:
+            for col in ['TORRE', 'N°DPTO', 'PAGOS', 'N°OPERACIÓN', 'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR']:
                 if col in df_filtrado.columns:
                     df_filtrado[col] = df_filtrado[col].apply(formatear_numero)
 
             # Orden de columnas deseado
-            columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN', 'PAGOS', 'N°OPERACIÓN']
+            columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN',
+                              'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR', 'PAGOS', 'N°OPERACIÓN']
             columnas_existentes = [col for col in columnas_final if col in df_filtrado.columns]
             st.dataframe(df_filtrado[columnas_existentes].fillna(""), use_container_width=True, height=600)
 
@@ -225,4 +268,3 @@ with tab2:
             st.info("La hoja seleccionada está vacía.")
     else:
         st.info("No hay hojas de pagos guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
-
