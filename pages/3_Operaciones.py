@@ -37,8 +37,8 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             base = prop[[col_torre_prop, col_depto_prop, 'codigo', 'dni', 'nombre']].copy()
             base.rename(columns={col_torre_prop: 'torre', col_depto_prop: 'departamento'}, inplace=True)
-            base['torre'] = pd.to_numeric(base['torre'], errors='coerce').astype('Int64')
-            base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce').astype('Int64')
+            base['torre'] = pd.to_numeric(base['torre'], errors='coerce')
+            base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce')
             base = base.dropna(subset=['torre', 'departamento'])
 
             # ========== DEUDA INICIAL ==========
@@ -56,8 +56,8 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 if col_t and col_d and col_dd:
                     deuda_df = deuda_df[[col_t, col_d, col_dd]].copy()
                     deuda_df.rename(columns={col_t: 'torre', col_d: 'departamento', col_dd: 'deuda_inicial'}, inplace=True)
-                    deuda_df['torre'] = pd.to_numeric(deuda_df['torre'], errors='coerce').astype('Int64')
-                    deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce').astype('Int64')
+                    deuda_df['torre'] = pd.to_numeric(deuda_df['torre'], errors='coerce')
+                    deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce')
                     deuda_df['deuda_inicial'] = pd.to_numeric(deuda_df['deuda_inicial'], errors='coerce').fillna(0)
                 else:
                     st.warning("No se identificaron columnas de deuda. Se usará 0.")
@@ -65,15 +65,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             # ========== PROGRAMACIÓN ==========
             prog_df = gsheets.leer_programacion(mes, anio)
-            # ----- DEPURACIÓN -----
-            st.write("### Datos de programación cargados")
-            st.write("**Columnas en prog_df:**", prog_df.columns.tolist())
-            if not prog_df.empty:
-                st.write("**Primeras 5 filas de prog_df:**")
-                st.dataframe(prog_df.head(5))
-            else:
-                st.warning("prog_df está vacío")
-            # ----------------------
             if prog_df.empty:
                 st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
                 prog_df = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
@@ -87,13 +78,12 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     if col_mant:
                         prog_df.rename(columns={col_mant: 'Mantenimiento'}, inplace=True)
                     else:
-                        st.warning("No se encontró columna de monto en programación. Se usará 0.")
                         prog_df['Mantenimiento'] = 0
                 prog_df = prog_df[['torre', 'departamento', 'Mantenimiento']].copy()
-                prog_df['torre'] = pd.to_numeric(prog_df['torre'], errors='coerce').astype('Int64')
-                prog_df['departamento'] = pd.to_numeric(prog_df['departamento'], errors='coerce').astype('Int64')
-                prog_df['Mantenimiento'] = pd.to_numeric(prog_df['Mantenimiento'], errors='coerce').fillna(0)
-                prog_df = prog_df.dropna(subset=['torre', 'departamento'])
+                for col in ['torre', 'departamento', 'Mantenimiento']:
+                    if col in prog_df.columns:
+                        prog_df[col] = pd.to_numeric(prog_df[col], errors='coerce')
+                prog_df['Mantenimiento'] = prog_df['Mantenimiento'].fillna(0)
 
             # ========== AMORTIZACIÓN ==========
             amort_df = gsheets.leer_amortizacion(mes, anio)
@@ -250,7 +240,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS
-            html += '表'
+            html += '<tr>'
             # Celdas antes de PROGRAMACION
             for i in range(prog_first):
                 html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
@@ -262,19 +252,18 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             # Celdas después de PAGOS
             for i in range(pagos_last+1, len(col_names)):
                 html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-            html += '?'
+            html += '</tr>'
 
             # Segunda fila: nombres de columnas
-            html += '表'
+            html += '<tr>'
             for col in col_names:
                 html += f'<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>'
-            html += '?'
-
+            html += '</tr>'
             html += '</thead><tbody>'
 
             # Filas de datos
             for _, row in df_final.iterrows():
-                html += '表'
+                html += '<tr>'
                 for col in col_names:
                     val = row[col]
                     # Alineación derecha para números
@@ -283,10 +272,9 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                         align = 'right'
                     else:
                         align = 'left'
-                    html += f'<td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}?</td>'
-                html += '?'
-
-            html += '</tbody>?</table></div>'
+                    html += f'<td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>'
+                html += '</tr>'
+            html += '</tbody></table></div>'
 
             st.markdown(html, unsafe_allow_html=True)
 
