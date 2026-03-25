@@ -166,6 +166,8 @@ with tab1:
 
                     movimientos.append({
                         'fecha': f"01/{mes[:3]}/{anio}",
+                        'torre': torre,
+                        'departamento': dpto,
                         'codigo': codigo,
                         'dni': dni,
                         'nombre': nombre,
@@ -187,6 +189,8 @@ with tab1:
                         saldo -= pago['ingresos']
                         movimientos.append({
                             'fecha': pago['fecha'].strftime('%d/%m/%Y') if pd.notna(pago['fecha']) else '',
+                            'torre': torre,
+                            'departamento': dpto,
                             'codigo': codigo,
                             'dni': dni,
                             'nombre': nombre,
@@ -223,9 +227,9 @@ with tab1:
                     if col in df_mov.columns:
                         df_mov[col] = df_mov[col].apply(fmt_num)
 
-                # Seleccionar y ordenar columnas finales
+                # Seleccionar y ordenar columnas finales (incluyendo torre y departamento)
                 columnas_orden = [
-                    'fecha', 'codigo', 'dni', 'nombre',
+                    'fecha', 'torre', 'departamento', 'codigo', 'dni', 'nombre',
                     'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
                     'n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo'
                 ]
@@ -263,7 +267,7 @@ with tab1:
                 prog_indices = [i for i, col in enumerate(col_names) if col in grupo_prog]
                 pagos_indices = [i for i, col in enumerate(col_names) if col in grupo_pagos]
 
-                # Construir HTML con strings simples (sin símbolos extraños)
+                # Construir HTML
                 html = '<div style="overflow-x: auto; max-width: 100%;">\n'
                 html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">\n'
                 html += '<thead>\n'
@@ -277,7 +281,7 @@ with tab1:
                     pagos_span = pagos_last - pagos_first + 1
 
                     # Primera fila
-                    html += '   <tr>\n'
+                    html += '    <tr>\n'
                     # Celdas vacías antes de PROGRAMACION
                     for i in range(prog_first):
                         html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
@@ -291,23 +295,23 @@ with tab1:
                     # Celdas vacías después de PAGOS
                     for i in range(pagos_last+1, len(col_names)):
                         html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '   </tr>\n'
+                    html += '    </tr>\n'
 
                 # Segunda fila: nombres de columnas
-                html += '   <tr>\n'
+                html += '    <tr>\n'
                 for col in col_names:
                     html += f'    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '   </tr>\n'
+                html += '    </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 # Filas de datos
                 for _, row in df_final.iterrows():
-                    html += '   <tr>\n'
+                    html += '    <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'    <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '   </tr>\n'
+                    html += '    </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -348,7 +352,6 @@ with tab2:
             df_resumen.columns = [col[1] if col[1] else col[0] for col in df_resumen.columns]
 
         # Convertir nombres de columnas a minúsculas para búsqueda flexible
-        columnas_originales = list(df_resumen.columns)
         df_resumen.columns = [col.lower() for col in df_resumen.columns]
 
         # Mapeo de columnas necesarias (búsqueda por palabras clave)
@@ -381,7 +384,6 @@ with tab2:
 
         # ---------- PROCESAMIENTO ----------
         # Tomar el último registro de cada código (el saldo más reciente)
-        # Nota: asumimos que los registros están en orden cronológico (fecha ascendente)
         df_resumen['codigo_str'] = df_resumen['codigo'].astype(str)
         ultimos = df_resumen.groupby('codigo_str').last().reset_index(drop=True)
 
@@ -390,7 +392,6 @@ with tab2:
             if pd.isna(x):
                 return 0.0
             s = str(x).strip()
-            # Eliminar comas, espacios, símbolos de moneda
             s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
             try:
                 return float(s)
@@ -423,7 +424,6 @@ with tab2:
 
         # Subtotales por torre
         st.subheader("Subtotales por Torre")
-        # Calcular sumas correctamente
         subtotales = resumen_final.groupby('TORRE')['SALDO A PAGAR'].agg(
             lambda x: sum(limpiar_numero(v) for v in x)
         ).reset_index()
