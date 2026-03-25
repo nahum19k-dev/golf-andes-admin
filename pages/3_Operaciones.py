@@ -20,7 +20,7 @@ if 'anio_actual' not in st.session_state:
 # ========== CREAR PESTAÑAS ==========
 tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
 
-# ====================== TAB 1: DETALLE POR DEPARTAMENTO (original) ======================
+# ====================== TAB 1: DETALLE POR DEPARTAMENTO ======================
 with tab1:
     # Selección de período y código
     col1, col2, col3 = st.columns([2, 2, 2])
@@ -409,6 +409,11 @@ with tab2:
         # Renombrar columnas para la tabla final
         resumen_final = ultimos[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'SALDO A PAGAR']].copy()
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES', 'SALDO A PAGAR']
+
+        # ---------- TOTAL GENERAL ----------
+        total_saldo = sum(limpiar_numero(v) for v in resumen_final['SALDO A PAGAR'])
+        st.metric("💰 Total de Saldo a Pagar", f"S/ {total_saldo:,.2f}")
+        st.markdown("---")
 
         # Buscador
         busqueda = st.text_input("Buscar por código o nombre", placeholder="Ej. 01101 o nombre")
