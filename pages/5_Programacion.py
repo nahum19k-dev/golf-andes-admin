@@ -63,6 +63,9 @@ with tab1:
                     # Eliminar columnas duplicadas (por si el Excel tiene nombres repetidos)
                     df = df.loc[:, ~df.columns.duplicated()]
 
+                    # Mostrar las columnas detectadas (puedes comentar después)
+                    # st.write("Columnas detectadas:", list(df.columns))
+
                     # --- Buscar la columna de total (mantenimiento) para renombrarla a "Mantenimiento" ---
                     col_monto = None
                     # Primero buscar exactamente "Mantenimiento"
@@ -147,7 +150,10 @@ with tab1:
             df_guardado = gsheets.leer_hoja_programacion(hoja_seleccionada)
 
             if not df_guardado.empty:
-                # Cargar propietarios para obtener nombre y DNI
+                # Eliminar duplicados por torre/departamento (por si hubiera filas repetidas en la hoja)
+                df_guardado = df_guardado.drop_duplicates(subset=['torre', 'departamento'], keep='first')
+
+                # Cargar propietarios
                 prop = gsheets.leer_propietarios()
                 if not prop.empty:
                     # Detectar columnas de torre y departamento en prop
@@ -162,12 +168,14 @@ with tab1:
                         st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios. No se mostrarán nombres ni DNI.")
                         df_mostrar = df_guardado.copy()
                     else:
-                        # Preparar propietarios para merge
+                        # Preparar propietarios para merge, eliminando duplicados
                         prop_sub = prop[[col_torre_prop, col_dpto_prop, 'nombre', 'dni']].copy()
                         prop_sub.rename(columns={col_torre_prop: 'torre', col_dpto_prop: 'departamento'}, inplace=True)
                         # Convertir a numérico para merge correcto
                         prop_sub['torre'] = pd.to_numeric(prop_sub['torre'], errors='coerce')
                         prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
+                        # 🔥 ELIMINAR DUPLICADOS EN PROPIETARIOS (misma torre/departamento)
+                        prop_sub = prop_sub.drop_duplicates(subset=['torre', 'departamento'], keep='first')
                         # Realizar merge
                         df_mostrar = df_guardado.merge(prop_sub, on=['torre', 'departamento'], how='left')
                 else:
@@ -195,7 +203,7 @@ with tab1:
                     if col in df_mostrar.columns:
                         df_mostrar[col] = df_mostrar[col].apply(formatear_numero)
 
-                # Renombrar columnas para visualización amigable (solo las que nos interesan)
+                # Renombrar columnas para visualización amigable
                 mapeo = {
                     'torre': 'TORRE',
                     'departamento': 'N°DPTO',
@@ -203,16 +211,11 @@ with tab1:
                     'dni': 'DNI',
                     'Mantenimiento': 'MANTENIMIENTO (S/)'
                 }
-                # Solo renombrar las que existen
                 df_viz = df_mostrar.rename(columns={col: mapeo[col] for col in df_mostrar.columns if col in mapeo})
-                # Eliminar columnas duplicadas por si acaso
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
 
-                # Orden de columnas deseado
                 columnas_final = ['TORRE', 'N°DPTO', 'NOMBRES Y APELLIDOS', 'DNI', 'MANTENIMIENTO (S/)']
-                # Seleccionar solo las que existen
                 columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
-                # Si no existe la columna de nombre, mostramos solo torre/dpto/mantenimiento
                 if 'NOMBRES Y APELLIDOS' not in df_viz.columns:
                     columnas_existentes = ['TORRE', 'N°DPTO', 'MANTENIMIENTO (S/)']
                 df_viz = df_viz[columnas_existentes]
@@ -241,7 +244,7 @@ with tab1:
 
                 st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
 
-                # Botón de descarga (incluye todas las columnas)
+                # Botón de descarga
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
