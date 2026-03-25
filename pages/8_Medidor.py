@@ -211,6 +211,7 @@ with tab2:
         df_guardado = gsheets.leer_hoja_medidor(hoja_seleccionada)
 
         if not df_guardado.empty:
+            # Función para formatear números sin .0 (igual que en la primera pestaña)
             def formatear_numero(valor):
                 try:
                     if pd.isna(valor):
@@ -239,14 +240,40 @@ with tab2:
             }
             df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
-            columnas_final = ['CÓDIGO', 'TORRE', 'DPTO', 'PROPIETARIO', 'DNI', 'MEDIDOR INSTALADO', 'N° MEDIDOR', 'MONTO (S/)']
-            columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
-            st.dataframe(df_viz[columnas_existentes].fillna(""), use_container_width=True, height=600)
+            # ---------- CALCULAR TOTAL DE MONTO ----------
+            # Extraer valores numéricos de la columna MONTO (S/) y sumarlos
+            # Primero convertir a número (ya están formateados como strings, pero podemos usar la función limpiar)
+            def extraer_numero(val):
+                if pd.isna(val) or val == '':
+                    return 0.0
+                # Eliminar caracteres no numéricos excepto punto decimal y signo menos
+                s = str(val).strip()
+                # Eliminar comas, espacios, símbolos de moneda
+                s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
+                try:
+                    return float(s)
+                except:
+                    return 0.0
 
+            total_monto = df_viz['MONTO (S/)'].apply(extraer_numero).sum()
+            total_formateado = f"S/ {total_monto:,.2f}"
+
+            # Mostrar indicador de total
+            st.metric("💰 Total de Monto a Pagar", total_formateado)
+            st.markdown("---")
+
+            # ---------- RESET INDEX PARA EMPEZAR EN 1 ----------
+            df_viz = df_viz.reset_index(drop=True)
+            df_viz.index = df_viz.index + 1
+
+            # Mostrar tabla
+            st.dataframe(df_viz, use_container_width=True, height=600)
+
+            # Botón descarga
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_viz[columnas_existentes].to_excel(writer, index=False, sheet_name=hoja_seleccionada)
+                df_viz.to_excel(writer, index=False, sheet_name=hoja_seleccionada)
             excel_data = output.getvalue()
             st.download_button(
                 label="📥 Descargar como Excel",
