@@ -321,10 +321,6 @@ def leer_hoja_deuda(nombre_hoja):
 
 # ====================== FUNCIONES DE LECTURA PARA OPERACIONES ======================
 def leer_programacion(mes: str, anio: int):
-    """
-    Lee la hoja de programación y devuelve torre, departamento y Mantenimiento.
-    Prioriza las columnas exactas "Torre" y "Departamento".
-    """
     nombre_hoja = f"Prog_{mes.upper()}_{anio}"
     spreadsheet = get_spreadsheet()
     try:
@@ -339,42 +335,64 @@ def leer_programacion(mes: str, anio: int):
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
 
-    # Buscar exactamente "Torre" y "Departamento" (insensible a mayúsculas)
+    # 1. Buscar exactamente la columna "Torre"
     col_torre = None
-    col_dpto = None
     for col in df.columns:
         if col.lower() == 'torre':
             col_torre = col
-        if col.lower() == 'departamento':
-            col_dpto = col
-    # Si no se encuentran, fallback a búsqueda amplia
-    if col_torre is None or col_dpto is None:
+            break
+    if col_torre is None:
         for col in df.columns:
             if 'torre' in col.lower():
                 col_torre = col
-            if 'departamento' in col.lower() or 'dpto' in col.lower():
-                col_dpto = col
-        if col_torre is None or col_dpto is None:
+                break
+        if col_torre is None:
             return pd.DataFrame()
 
-    # Buscar columna de total (mantenimiento)
-    col_total = None
+    # 2. Buscar exactamente la columna "Departamento"
+    col_dpto = None
     for col in df.columns:
-        col_low = col.lower()
-        if 'total' in col_low or 'mantenimiento' in col_low or 'cuota' in col_low or 'pagar' in col_low:
+        if col.lower() == 'departamento':
+            col_dpto = col
+            break
+    if col_dpto is None:
+        for col in df.columns:
+            if 'departamento' in col.lower() or 'dpto' in col.lower():
+                col_dpto = col
+                break
+        if col_dpto is None:
+            return pd.DataFrame()
+
+    # 3. Buscar la columna de total (mantenimiento)
+    col_total = None
+    # Primero buscar exactamente "Mantenimiento"
+    for col in df.columns:
+        if col.lower() == 'mantenimiento':
             col_total = col
             break
     if col_total is None:
+        # Si no, buscar cualquier columna que contenga "total", "cuota", "pagar"
+        for col in df.columns:
+            col_low = col.lower()
+            if 'total' in col_low or 'cuota' in col_low or 'pagar' in col_low:
+                col_total = col
+                break
+    if col_total is None:
         return pd.DataFrame()
 
-    df_out = pd.DataFrame()
-    df_out['torre'] = pd.to_numeric(df[col_torre], errors='coerce')
-    df_out['departamento'] = pd.to_numeric(df[col_dpto], errors='coerce')
-    df_out['Mantenimiento'] = pd.to_numeric(df[col_total], errors='coerce')
+    # Crear DataFrame con las tres columnas
+    df_out = df[[col_torre, col_dpto, col_total]].copy()
+    df_out.columns = ['torre', 'departamento', 'Mantenimiento']
 
-    # Eliminar filas sin torre/departamento
+    # Convertir a numérico
+    df_out['torre'] = pd.to_numeric(df_out['torre'], errors='coerce')
+    df_out['departamento'] = pd.to_numeric(df_out['departamento'], errors='coerce')
+    df_out['Mantenimiento'] = pd.to_numeric(df_out['Mantenimiento'], errors='coerce')
+
+    # Eliminar filas donde torre o departamento sean NaN (no numéricos)
     df_out = df_out.dropna(subset=['torre', 'departamento'])
-    # Convertir a enteros nullable para que coincidan con propietarios
+
+    # Convertir torre y departamento a enteros nullable para que coincidan con los propietarios
     df_out['torre'] = df_out['torre'].astype('Int64')
     df_out['departamento'] = df_out['departamento'].astype('Int64')
 
