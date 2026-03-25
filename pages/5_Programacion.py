@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import gsheets
 from datetime import datetime, timedelta
 
@@ -57,36 +58,48 @@ with tab1:
                 else:
                     df = pd.read_excel(uploaded_file, sheet_name=0, skiprows=start_row)
                     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-
-                    # Eliminar columnas duplicadas (por si hay dos con el mismo nombre)
+                    # Eliminar columnas duplicadas
                     df = df.loc[:, ~df.columns.duplicated()]
 
-                    # Buscar columna de total (mantenimiento)
+                    # Mostrar columnas para diagnóstico (opcional, puedes comentar después)
+                    # st.write("Columnas detectadas:", list(df.columns))
+
+                    # Buscar columna de total (mantenimiento) priorizando la que tenga datos numéricos
                     col_monto = None
+                    # Primero buscar exactamente "Mantenimiento"
                     for col in df.columns:
-                        col_low = col.lower()
-                        if 'total' in col_low or 'mantenimiento' in col_low or 'cuota' in col_low:
-                            col_monto = col
-                            break
+                        if col.lower() == 'mantenimiento':
+                            test_vals = df[col].dropna().astype(str).head(10)
+                            if any(v.replace(',', '.').replace('S/', '').strip().replace(' ', '').replace('.', '').isdigit() for v in test_vals if v):
+                                col_monto = col
+                                break
+                    # Si no, buscar cualquier columna que contenga "total", "cuota", "pagar"
                     if col_monto is None:
-                        st.error("No se encontró la columna de monto total. Verifica que el Excel tenga una columna con 'Total' o 'Mantenimiento'.")
+                        for col in df.columns:
+                            col_low = col.lower()
+                            if 'total' in col_low or 'cuota' in col_low or 'pagar' in col_low:
+                                test_vals = df[col].dropna().astype(str).head(10)
+                                if any(v.replace(',', '.').replace('S/', '').strip().replace(' ', '').replace('.', '').isdigit() for v in test_vals if v):
+                                    col_monto = col
+                                    break
+                    if col_monto is None:
+                        st.error("No se encontró una columna de monto total con datos numéricos. Verifica el archivo.")
                     else:
-                        # Renombrar columna de total a "Mantenimiento"
+                        # st.write(f"Columna de monto detectada: {col_monto}")
+                        # Renombrar a "Mantenimiento"
                         if col_monto != 'Mantenimiento':
                             if 'Mantenimiento' in df.columns:
                                 df = df.drop(columns=['Mantenimiento'])
                             df.rename(columns={col_monto: 'Mantenimiento'}, inplace=True)
 
-                        # Identificar columnas de torre y departamento (priorizando nombres exactos)
+                        # Identificar columnas de torre y departamento (exactas primero)
                         col_torre = None
                         col_dpto = None
-                        # Primero buscar coincidencias exactas
                         for col in df.columns:
                             if col.lower() == 'torre':
                                 col_torre = col
                             if col.lower() == 'departamento':
                                 col_dpto = col
-                        # Si no se encontraron exactas, buscar que contengan la palabra
                         if col_torre is None:
                             for col in df.columns:
                                 if 'torre' in col.lower():
@@ -100,19 +113,29 @@ with tab1:
                         if col_torre is None or col_dpto is None:
                             st.error("No se encontraron las columnas 'torre' y 'departamento'.")
                         else:
-                            # Quedarnos solo con las tres columnas necesarias
+                            # Seleccionar solo esas tres columnas
                             df = df[[col_torre, col_dpto, 'Mantenimiento']].copy()
                             df.columns = ['torre', 'departamento', 'Mantenimiento']
-                            # Convertir a numérico
+
+                            # Limpiar y convertir a numérico
+                            def clean_number(x):
+                                if pd.isna(x):
+                                    return np.nan
+                                s = str(x).strip()
+                                s = s.replace('S/', '').replace('$', '').replace(' ', '').replace(',', '.')
+                                try:
+                                    return float(s)
+                                except:
+                                    return np.nan
+                            df['Mantenimiento'] = df['Mantenimiento'].apply(clean_number)
                             df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
                             df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
-                            df['Mantenimiento'] = pd.to_numeric(df['Mantenimiento'], errors='coerce')
-                            # Eliminar filas donde torre o departamento no sean numéricos (NaN)
-                            df = df.dropna(subset=['torre', 'departamento'])
-                            # Si la columna Mantenimiento está vacía, mostrar advertencia
-                            if df['Mantenimiento'].isna().all():
-                                st.warning("La columna de mantenimiento no contiene datos numéricos. Verifica que la columna seleccionada sea la correcta.")
 
+                            # Eliminar filas sin torre o departamento
+                            df = df.dropna(subset=['torre', 'departamento'])
+
+                            if df['Mantenimiento'].isna().all():
+                                st.warning("La columna de mantenimiento no contiene datos numéricos después de la limpieza. Verifica que la columna detectada sea la correcta.")
                             st.success(f"Archivo leído: {len(df)} filas")
                             st.write("Vista previa (primeras 8 filas):")
                             st.dataframe(df.head(8))
