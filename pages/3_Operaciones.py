@@ -233,7 +233,7 @@ with tab1:
                 df_final = df_final.reset_index(drop=True)
                 df_final.insert(0, '#', range(1, len(df_final)+1))
 
-                # Guardar en session_state para la segunda pestaña
+                # --- Guardar datos en session_state (versión plana, sin MultiIndex) ---
                 st.session_state.df_final = df_final.copy()
                 st.session_state.datos_cargados = True
                 st.session_state.mes_actual = mes
@@ -277,7 +277,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '   <tr>\n'
+                    html += '    <tr>\n'
                     # Celdas vacías antes de PROGRAMACION
                     for i in range(prog_first):
                         html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
@@ -289,28 +289,28 @@ with tab1:
                     # Celdas vacías después de PAGOS
                     for i in range(pagos_last+1, len(col_names)):
                         html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '   </tr>\n'
+                    html += '    </tr>\n'
 
                 # Segunda fila: nombres de columnas
-                html += '   <tr>\n'
+                html += '    <tr>\n'
                 for col in col_names:
                     html += f'    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '   </tr>\n'
+                html += '    </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 # Filas de datos
                 for _, row in df_mostrar.iterrows():
-                    html += '   <tr>\n'
+                    html += '    <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'    <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '   </tr>\n'
+                    html += '    </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
 
-                # Descarga a Excel
+                # Descarga a Excel (usando el DataFrame plano)
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -339,11 +339,22 @@ with tab2:
         st.info("Primero genera los datos en la pestaña 'Detalle por Departamento'.")
     else:
         df_resumen = st.session_state.df_final.copy()
-        mes_actual = st.session_state.mes_actual
-        anio_actual = st.session_state.anio_actual
+
+        # Si el DataFrame tiene MultiIndex, aplanarlo (tomar el segundo nivel si existe)
+        if isinstance(df_resumen.columns, pd.MultiIndex):
+            df_resumen.columns = [col[1] if col[1] else col[0] for col in df_resumen.columns]
+        # Asegurar que la columna 'codigo' existe
+        if 'codigo' not in df_resumen.columns:
+            # Buscar una columna que contenga 'codigo'
+            for col in df_resumen.columns:
+                if 'codigo' in col.lower():
+                    df_resumen = df_resumen.rename(columns={col: 'codigo'})
+                    break
+        if 'codigo' not in df_resumen.columns:
+            st.error("No se encontró la columna 'codigo' en los datos. No se puede generar el resumen.")
+            st.stop()
 
         # Tomar el último registro de cada propiedad (más reciente)
-        # Asumimos que los registros están en orden cronológico (fecha ascendente) y que el último es el saldo final
         df_resumen['codigo_str'] = df_resumen['codigo'].astype(str)
         ultimos = df_resumen.groupby('codigo_str').last().reset_index(drop=True)
         # Seleccionar columnas relevantes
@@ -386,12 +397,12 @@ with tab2:
         import io
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            resumen_final.to_excel(writer, index=False, sheet_name=f"Resumen_Torres_{mes_actual}_{anio_actual}")
+            resumen_final.to_excel(writer, index=False, sheet_name=f"Resumen_Torres_{st.session_state.mes_actual}_{st.session_state.anio_actual}")
             subtotales.to_excel(writer, index=False, sheet_name="Subtotales")
         excel_data = output.getvalue()
         st.download_button(
             label="📥 Descargar Resumen en Excel",
             data=excel_data,
-            file_name=f"Resumen_Torres_{mes_actual}_{anio_actual}.xlsx",
+            file_name=f"Resumen_Torres_{st.session_state.mes_actual}_{st.session_state.anio_actual}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
