@@ -63,9 +63,6 @@ with tab1:
                     # Eliminar columnas duplicadas (por si el Excel tiene nombres repetidos)
                     df = df.loc[:, ~df.columns.duplicated()]
 
-                    # Mostrar las columnas detectadas (puedes comentar después)
-                    # st.write("Columnas detectadas:", list(df.columns))
-
                     # --- Buscar la columna de total (mantenimiento) para renombrarla a "Mantenimiento" ---
                     col_monto = None
                     # Primero buscar exactamente "Mantenimiento"
@@ -165,19 +162,16 @@ with tab1:
                         st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios. No se mostrarán nombres ni DNI.")
                         df_mostrar = df_guardado.copy()
                     else:
-                        # Preparar propietarios para merge
                         prop_sub = prop[[col_torre_prop, col_dpto_prop, 'nombre', 'dni']].copy()
                         prop_sub.rename(columns={col_torre_prop: 'torre', col_dpto_prop: 'departamento'}, inplace=True)
-                        # Convertir a numérico para merge correcto
                         prop_sub['torre'] = pd.to_numeric(prop_sub['torre'], errors='coerce')
                         prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
-                        # Realizar merge
                         df_mostrar = df_guardado.merge(prop_sub, on=['torre', 'departamento'], how='left')
                 else:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
                     df_mostrar = df_guardado.copy()
 
-                # Función para formatear números con dos decimales (para la columna Mantenimiento)
+                # Función para formatear números con dos decimales (para mostrar)
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -198,7 +192,7 @@ with tab1:
                     if col in df_mostrar.columns:
                         df_mostrar[col] = df_mostrar[col].apply(formatear_numero)
 
-                # Renombrar columnas para visualización amigable (solo las que nos interesan)
+                # Renombrar columnas para visualización amigable
                 mapeo = {
                     'torre': 'TORRE',
                     'departamento': 'N°DPTO',
@@ -206,10 +200,14 @@ with tab1:
                     'dni': 'DNI',
                     'Mantenimiento': 'MANTENIMIENTO (S/)'
                 }
-                # Solo renombrar las que existen
                 df_viz = df_mostrar.rename(columns={col: mapeo[col] for col in df_mostrar.columns if col in mapeo})
-                # Eliminar columnas duplicadas por si acaso
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
+
+                columnas_final = ['TORRE', 'N°DPTO', 'NOMBRES Y APELLIDOS', 'DNI', 'MANTENIMIENTO (S/)']
+                columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
+                if 'NOMBRES Y APELLIDOS' not in df_viz.columns:
+                    columnas_existentes = ['TORRE', 'N°DPTO', 'MANTENIMIENTO (S/)']
+                df_viz = df_viz[columnas_existentes]
 
                 # ---------- CALCULAR TOTAL DE MANTENIMIENTO ----------
                 def extraer_numero(val):
@@ -229,22 +227,13 @@ with tab1:
                 st.metric("💰 Total de Mantenimiento", total_formateado)
                 st.markdown("---")
 
-                # Orden de columnas deseado
-                columnas_final = ['TORRE', 'N°DPTO', 'NOMBRES Y APELLIDOS', 'DNI', 'MANTENIMIENTO (S/)']
-                # Seleccionar solo las que existen
-                columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
-                # Si no existe la columna de nombre, mostramos solo torre/dpto/mantenimiento
-                if 'NOMBRES Y APELLIDOS' not in df_viz.columns:
-                    columnas_existentes = ['TORRE', 'N°DPTO', 'MANTENIMIENTO (S/)']
-                df_viz = df_viz[columnas_existentes]
-
                 # Índice empezando en 1
                 df_viz = df_viz.reset_index(drop=True)
                 df_viz.index = df_viz.index + 1
 
                 st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
 
-                # Botón de descarga (incluye todas las columnas)
+                # Botón de descarga
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
