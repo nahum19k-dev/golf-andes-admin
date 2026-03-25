@@ -404,7 +404,9 @@ with tab2:
 
         # Tomar el primer registro (cargos) y asegurar que 'codigo_str' esté como columna
         primer_registro = grupo.first().reset_index()  # reset_index convierte el índice en columna
-        # Ahora 'codigo_str' es una columna regular
+        # Eliminar la columna 'total_pagado' del primer registro (son los cargos, pagado=0)
+        if 'total_pagado' in primer_registro.columns:
+            primer_registro = primer_registro.drop(columns=['total_pagado'])
 
         # Calcular Total Programación = mantenimiento + amortizacion + medidor
         primer_registro['total_programacion'] = (
