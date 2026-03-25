@@ -7,12 +7,15 @@ st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
 
 st.title("📊 Operaciones - Estado de Cuenta por Departamento")
 
-col1, col2 = st.columns(2)
+# Selección de período y código
+col1, col2, col3 = st.columns([2, 2, 2])
 with col1:
     mes = st.selectbox("Mes", ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                                "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"])
 with col2:
     anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
+with col3:
+    codigo_filtro = st.text_input("Buscar por código (ej. 01101)", placeholder="Dejar en blanco para mostrar todos")
 
 if st.button("Generar Estado de Cuenta", type="primary"):
     with st.spinner("Cargando datos..."):
@@ -216,6 +219,20 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             df_final = df_final.reset_index(drop=True)
             df_final.insert(0, '#', range(1, len(df_final)+1))
 
+            # ---------- APLICAR FILTRO POR CÓDIGO ----------
+            if codigo_filtro.strip():
+                # Convertir a string y filtrar (búsqueda parcial, insensible a mayúsculas)
+                mask = df_final['codigo'].astype(str).str.contains(codigo_filtro.strip(), case=False, na=False)
+                df_final = df_final[mask].copy()
+                if df_final.empty:
+                    st.warning(f"No se encontraron movimientos para el código '{codigo_filtro}'")
+                else:
+                    # Reindexar después de filtrar
+                    df_final = df_final.reset_index(drop=True)
+                    df_final.index = df_final.index + 1
+                    df_final['#'] = df_final.index
+            # -----------------------------------------
+
             # ========== GENERAR TABLA HTML CON DOS CABECERAS AGRUPADAS ==========
             col_names = list(df_final.columns)
 
@@ -234,13 +251,13 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             pagos_last = max(pagos_indices) if pagos_indices else 0
             pagos_span = pagos_last - pagos_first + 1
 
-            # Construir HTML con etiquetas correctas y estilos compactos
+            # Construir HTML
             html = '<div style="overflow-x: auto; max-width: 100%;">'
             html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">'
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS
-            html += '<tr>'
+            html += '苦'
             # Celdas antes de PROGRAMACION
             for i in range(prog_first):
                 html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
@@ -252,18 +269,19 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             # Celdas después de PAGOS
             for i in range(pagos_last+1, len(col_names)):
                 html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-            html += '</tr>'
+            html += '?'
 
             # Segunda fila: nombres de columnas
-            html += '<tr>'
+            html += '苦'
             for col in col_names:
                 html += f'<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>'
-            html += '</tr>'
+            html += '?'
+
             html += '</thead><tbody>'
 
             # Filas de datos
             for _, row in df_final.iterrows():
-                html += '<tr>'
+                html += '苦'
                 for col in col_names:
                     val = row[col]
                     # Alineación derecha para números
@@ -272,13 +290,14 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                         align = 'right'
                     else:
                         align = 'left'
-                    html += f'<td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>'
-                html += '</tr>'
-            html += '</tbody></table></div>'
+                    html += f'<td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}?\\th'
+                html += '?'
+
+            html += '</tbody>?\\table</div>'
 
             st.markdown(html, unsafe_allow_html=True)
 
-            # Descarga a Excel
+            # Descarga a Excel (usando el DataFrame filtrado)
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
