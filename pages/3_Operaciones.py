@@ -240,36 +240,43 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
             grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
 
-            # Encontrar índices
-            prog_indices = [col_names.index(c) for c in grupo_prog if c in col_names]
-            prog_first = min(prog_indices) if prog_indices else 0
-            prog_last = max(prog_indices) if prog_indices else 0
-            prog_span = prog_last - prog_first + 1
+            # Encontrar índices reales en col_names
+            prog_indices = [i for i, col in enumerate(col_names) if col in grupo_prog]
+            pagos_indices = [i for i, col in enumerate(col_names) if col in grupo_pagos]
 
-            pagos_indices = [col_names.index(c) for c in grupo_pagos if c in col_names]
-            pagos_first = min(pagos_indices) if pagos_indices else 0
-            pagos_last = max(pagos_indices) if pagos_indices else 0
-            pagos_span = pagos_last - pagos_first + 1
+            if prog_indices and pagos_indices:
+                prog_first = min(prog_indices)
+                prog_last = max(prog_indices)
+                prog_span = prog_last - prog_first + 1
+                pagos_first = min(pagos_indices)
+                pagos_last = max(pagos_indices)
+                pagos_span = pagos_last - pagos_first + 1
+            else:
+                prog_span = pagos_span = 0
+                prog_first = pagos_first = 0
 
-            # Construir HTML
+            # Construir HTML con etiquetas correctas
             html = '<div style="overflow-x: auto; max-width: 100%;">'
             html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">'
             html += '<thead>'
 
-            # Primera fila: PROGRAMACION y PAGOS
-            html += '苦'
-            # Celdas antes de PROGRAMACION
-            for i in range(prog_first):
-                html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-            html += f'<th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>'
-            # Celdas entre PROGRAMACION y PAGOS
-            for i in range(prog_last+1, pagos_first):
-                html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-            html += f'<th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>'
-            # Celdas después de PAGOS
-            for i in range(pagos_last+1, len(col_names)):
-                html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-            html += '?'
+            # Primera fila: PROGRAMACION y PAGOS (solo si ambos grupos existen)
+            if prog_span > 0 and pagos_span > 0:
+                html += '苦'
+                # Celdas antes de PROGRAMACION (índice, fecha, código, dni, nombre)
+                for i in range(prog_first):
+                    html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
+                # Celda fusionada para PROGRAMACION
+                html += f'<th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>'
+                # Celdas entre PROGRAMACION y PAGOS
+                for i in range(prog_last+1, pagos_first):
+                    html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
+                # Celda fusionada para PAGOS
+                html += f'<th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>'
+                # Celdas después de PAGOS (si hay)
+                for i in range(pagos_last+1, len(col_names)):
+                    html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
+                html += '?'
 
             # Segunda fila: nombres de columnas
             html += '苦'
