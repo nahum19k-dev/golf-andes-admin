@@ -221,13 +221,11 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             # ---------- APLICAR FILTRO POR CÓDIGO ----------
             if codigo_filtro.strip():
-                # Convertir a string y filtrar (búsqueda parcial, insensible a mayúsculas)
                 mask = df_final['codigo'].astype(str).str.contains(codigo_filtro.strip(), case=False, na=False)
                 df_final = df_final[mask].copy()
                 if df_final.empty:
                     st.warning(f"No se encontraron movimientos para el código '{codigo_filtro}'")
                 else:
-                    # Reindexar después de filtrar
                     df_final = df_final.reset_index(drop=True)
                     df_final.index = df_final.index + 1
                     df_final['#'] = df_final.index
@@ -240,20 +238,9 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
             grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
 
-            # Encontrar índices reales en col_names
+            # Encontrar índices reales
             prog_indices = [i for i, col in enumerate(col_names) if col in grupo_prog]
             pagos_indices = [i for i, col in enumerate(col_names) if col in grupo_pagos]
-
-            if prog_indices and pagos_indices:
-                prog_first = min(prog_indices)
-                prog_last = max(prog_indices)
-                prog_span = prog_last - prog_first + 1
-                pagos_first = min(pagos_indices)
-                pagos_last = max(pagos_indices)
-                pagos_span = pagos_last - pagos_first + 1
-            else:
-                prog_span = pagos_span = 0
-                prog_first = pagos_first = 0
 
             # Construir HTML con etiquetas correctas
             html = '<div style="overflow-x: auto; max-width: 100%;">'
@@ -261,9 +248,16 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS (solo si ambos grupos existen)
-            if prog_span > 0 and pagos_span > 0:
-                html += '苦'
-                # Celdas antes de PROGRAMACION (índice, fecha, código, dni, nombre)
+            if prog_indices and pagos_indices:
+                prog_first = min(prog_indices)
+                prog_last = max(prog_indices)
+                prog_span = prog_last - prog_first + 1
+                pagos_first = min(pagos_indices)
+                pagos_last = max(pagos_indices)
+                pagos_span = pagos_last - pagos_first + 1
+
+                html += '表'
+                # Celdas antes de PROGRAMACION
                 for i in range(prog_first):
                     html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
                 # Celda fusionada para PROGRAMACION
@@ -273,38 +267,38 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
                 # Celda fusionada para PAGOS
                 html += f'<th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>'
-                # Celdas después de PAGOS (si hay)
+                # Celdas después de PAGOS
                 for i in range(pagos_last+1, len(col_names)):
                     html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-                html += '?'
+                html += '?</th>'  # cerrar la fila
+            else:
+                # Si no hay grupos, mostrar una fila vacía
+                html += '<tr><th colspan="100%" style="padding: 4px 2px;">Sin grupos</th></tr>'
 
             # Segunda fila: nombres de columnas
-            html += '苦'
+            html += '表'
             for col in col_names:
                 html += f'<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>'
-            html += '?'
+            html += '?</th>'  # cerrar la fila
 
             html += '</thead><tbody>'
 
             # Filas de datos
             for _, row in df_final.iterrows():
-                html += '苦'
+                html += '表'
                 for col in col_names:
                     val = row[col]
-                    # Alineación derecha para números
-                    if col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
-                               'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']:
-                        align = 'right'
-                    else:
-                        align = 'left'
-                    html += f'<td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}?\\th'
-                html += '?'
-
-            html += '</tbody>?\\table</div>'
+                    align = 'right' if col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
+                                               'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo'] else 'left'
+                    html += f'<td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>'
+                html += '</tr>'
+            html += '</tbody>'
+            html += '</table>'
+            html += '</div>'
 
             st.markdown(html, unsafe_allow_html=True)
 
-            # Descarga a Excel (usando el DataFrame filtrado)
+            # Descarga a Excel
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
