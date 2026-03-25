@@ -231,70 +231,10 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     df_final['#'] = df_final.index
             # -----------------------------------------
 
-            # ========== GENERAR TABLA HTML CON CABECERAS AGRUPADAS ==========
-            col_names = list(df_final.columns)
+            # Mostrar tabla con st.dataframe
+            st.dataframe(df_final, use_container_width=True, height=600)
 
-            # Grupos de columnas (usando los nombres originales)
-            grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
-            grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
-
-            # Encontrar índices
-            prog_indices = [i for i, col in enumerate(col_names) if col in grupo_prog]
-            pagos_indices = [i for i, col in enumerate(col_names) if col in grupo_pagos]
-
-            # Construir HTML (usando solo etiquetas estándar)
-            html = '<div style="overflow-x: auto; max-width: 100%;">'
-            html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">'
-            html += '<thead>'
-
-            # Primera fila (solo si ambos grupos existen)
-            if prog_indices and pagos_indices:
-                prog_first = min(prog_indices)
-                prog_last = max(prog_indices)
-                prog_span = prog_last - prog_first + 1
-                pagos_first = min(pagos_indices)
-                pagos_last = max(pagos_indices)
-                pagos_span = pagos_last - pagos_first + 1
-
-                html += '表'
-                # Celdas antes de PROGRAMACION (columna #, fecha, código, dni, nombre)
-                for i in range(prog_first):
-                    html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-                # Celda fusionada para PROGRAMACION
-                html += f'<th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>'
-                # Celdas entre PROGRAMACION y PAGOS
-                for i in range(prog_last+1, pagos_first):
-                    html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-                # Celda fusionada para PAGOS
-                html += f'<th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>'
-                # Celdas después de PAGOS (si hay)
-                for i in range(pagos_last+1, len(col_names)):
-                    html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-                html += '?'
-
-            # Segunda fila: nombres de columnas
-            html += '表'
-            for col in col_names:
-                html += f'<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>'
-            html += '?'
-
-            html += '</thead><tbody>'
-
-            # Filas de datos
-            for _, row in df_final.iterrows():
-                html += '表'
-                for col in col_names:
-                    val = row[col]
-                    align = 'right' if col in grupo_prog + grupo_pagos else 'left'
-                    html += f'<td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}表'
-                html += '?'
-            html += '</tbody>'
-            html += '表'
-            html += '</div>'
-
-            st.markdown(html, unsafe_allow_html=True)
-
-            # Descarga a Excel (el DataFrame ya está filtrado)
+            # Descarga a Excel
             import io
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
