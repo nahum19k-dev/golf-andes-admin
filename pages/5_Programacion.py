@@ -47,6 +47,7 @@ with tab1:
 
         if uploaded_file is not None:
             try:
+                # Leer todo el archivo sin encabezados para encontrar la fila de inicio
                 df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
                 start_row = None
                 for i in range(len(df_raw)):
@@ -56,15 +57,16 @@ with tab1:
                 if start_row is None:
                     st.error("No encontré la fila con encabezados (buscando 'Lote' o 'Torre').")
                 else:
+                    # Leer desde la fila de encabezados
                     df = pd.read_excel(uploaded_file, sheet_name=0, skiprows=start_row)
                     df.columns = df.columns.str.strip().str.replace('\n', ' ')
-                    # Eliminar columnas duplicadas
+                    # Eliminar columnas duplicadas (por si el Excel tiene nombres repetidos)
                     df = df.loc[:, ~df.columns.duplicated()]
 
-                    # Mostrar columnas para diagnóstico (opcional, puedes comentar después)
+                    # Mostrar las columnas detectadas (puedes comentar después)
                     # st.write("Columnas detectadas:", list(df.columns))
 
-                    # Buscar columna de total (mantenimiento) priorizando la que tenga datos numéricos
+                    # --- Buscar la columna de total (mantenimiento) para renombrarla a "Mantenimiento" ---
                     col_monto = None
                     # Primero buscar exactamente "Mantenimiento"
                     for col in df.columns:
@@ -85,60 +87,35 @@ with tab1:
                     if col_monto is None:
                         st.error("No se encontró una columna de monto total con datos numéricos. Verifica el archivo.")
                     else:
-                        # st.write(f"Columna de monto detectada: {col_monto}")
-                        # Renombrar a "Mantenimiento"
+                        # Renombrar esa columna a "Mantenimiento"
                         if col_monto != 'Mantenimiento':
                             if 'Mantenimiento' in df.columns:
                                 df = df.drop(columns=['Mantenimiento'])
                             df.rename(columns={col_monto: 'Mantenimiento'}, inplace=True)
+                        st.success(f"Columna de monto renombrada a 'Mantenimiento'")
 
-                        # Identificar columnas de torre y departamento (exactas primero)
-                        col_torre = None
-                        col_dpto = None
-                        for col in df.columns:
-                            if col.lower() == 'torre':
-                                col_torre = col
-                            if col.lower() == 'departamento':
-                                col_dpto = col
-                        if col_torre is None:
-                            for col in df.columns:
-                                if 'torre' in col.lower():
-                                    col_torre = col
-                                    break
-                        if col_dpto is None:
-                            for col in df.columns:
-                                if 'departamento' in col.lower() or 'dpto' in col.lower():
-                                    col_dpto = col
-                                    break
-                        if col_torre is None or col_dpto is None:
-                            st.error("No se encontraron las columnas 'torre' y 'departamento'.")
-                        else:
-                            # Seleccionar solo esas tres columnas
-                            df = df[[col_torre, col_dpto, 'Mantenimiento']].copy()
-                            df.columns = ['torre', 'departamento', 'Mantenimiento']
+                    # Limpiar todas las columnas numéricas (opcional, pero ayuda a que los números se guarden correctamente)
+                    def clean_number(x):
+                        if pd.isna(x):
+                            return np.nan
+                        s = str(x).strip()
+                        s = s.replace('S/', '').replace('$', '').replace(' ', '').replace(',', '.')
+                        try:
+                            return float(s)
+                        except:
+                            return x  # si no se puede convertir, se deja como está
 
-                            # Limpiar y convertir a numérico
-                            def clean_number(x):
-                                if pd.isna(x):
-                                    return np.nan
-                                s = str(x).strip()
-                                s = s.replace('S/', '').replace('$', '').replace(' ', '').replace(',', '.')
-                                try:
-                                    return float(s)
-                                except:
-                                    return np.nan
-                            df['Mantenimiento'] = df['Mantenimiento'].apply(clean_number)
-                            df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
-                            df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+                    # Aplicar limpieza a todas las columnas que parezcan numéricas (por si tienen símbolos)
+                    for col in df.columns:
+                        # Probar con una muestra pequeña
+                        sample = df[col].dropna().head(10).astype(str)
+                        if any(c.replace(',', '.').replace('S/', '').strip().replace(' ', '').replace('.', '').isdigit() for c in sample if c):
+                            df[col] = df[col].apply(clean_number)
 
-                            # Eliminar filas sin torre o departamento
-                            df = df.dropna(subset=['torre', 'departamento'])
+                    st.success(f"Archivo leído: {len(df)} filas")
+                    st.write("Vista previa (primeras 8 filas):")
+                    st.dataframe(df.head(8))
 
-                            if df['Mantenimiento'].isna().all():
-                                st.warning("La columna de mantenimiento no contiene datos numéricos después de la limpieza. Verifica que la columna detectada sea la correcta.")
-                            st.success(f"Archivo leído: {len(df)} filas")
-                            st.write("Vista previa (primeras 8 filas):")
-                            st.dataframe(df.head(8))
             except Exception as e:
                 st.error(f"Error al leer: {e}")
 
@@ -200,7 +177,7 @@ with tab1:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
                     df_mostrar = df_guardado.copy()
 
-                # Función para formatear números con dos decimales
+                # Función para formatear números con dos decimales (para la columna Mantenimiento)
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -221,7 +198,7 @@ with tab1:
                     if col in df_mostrar.columns:
                         df_mostrar[col] = df_mostrar[col].apply(formatear_numero)
 
-                # Renombrar columnas para visualización amigable
+                # Renombrar columnas para visualización amigable (solo las que nos interesan)
                 mapeo = {
                     'torre': 'TORRE',
                     'departamento': 'N°DPTO',
