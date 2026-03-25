@@ -342,36 +342,71 @@ with tab2:
     else:
         df_resumen = st.session_state.df_final.copy()
 
-        # Si el DataFrame tiene MultiIndex, aplanarlo
+        # ---------- LIMPIEZA DE COLUMNAS ----------
+        # Si tiene MultiIndex, aplanar
         if isinstance(df_resumen.columns, pd.MultiIndex):
             df_resumen.columns = [col[1] if col[1] else col[0] for col in df_resumen.columns]
 
-        # Asegurar que exista la columna 'codigo'
-        if 'codigo' not in df_resumen.columns:
-            for col in df_resumen.columns:
-                if 'codigo' in col.lower():
-                    df_resumen = df_resumen.rename(columns={col: 'codigo'})
-                    break
-        if 'codigo' not in df_resumen.columns:
-            st.error("No se encontró la columna 'codigo' en los datos. No se puede generar el resumen.")
+        # Convertir nombres de columnas a minúsculas para búsqueda flexible
+        columnas_originales = list(df_resumen.columns)
+        df_resumen.columns = [col.lower() for col in df_resumen.columns]
+
+        # Mapeo de columnas necesarias (búsqueda por palabras clave)
+        col_mapping = {}
+        for col in df_resumen.columns:
+            if 'torre' in col:
+                col_mapping['torre'] = col
+            elif 'departamento' in col or 'dpto' in col:
+                col_mapping['departamento'] = col
+            elif 'codigo' in col:
+                col_mapping['codigo'] = col
+            elif 'dni' in col:
+                col_mapping['dni'] = col
+            elif 'nombre' in col:
+                col_mapping['nombre'] = col
+            elif 'saldo' in col:
+                col_mapping['saldo'] = col
+
+        # Verificar que se encontraron todas las columnas esenciales
+        esenciales = ['torre', 'departamento', 'codigo', 'dni', 'nombre', 'saldo']
+        faltan = [col for col in esenciales if col not in col_mapping]
+        if faltan:
+            st.error(f"Faltan columnas esenciales: {faltan}. Columnas disponibles: {list(df_resumen.columns)}")
             st.stop()
 
-        # Tomar el último registro de cada propiedad (el saldo más reciente)
+        # Renombrar a nombres estándar
+        df_resumen = df_resumen.rename(columns={col_mapping[k]: k for k in esenciales})
+        # Conservar solo las columnas necesarias
+        df_resumen = df_resumen[esenciales]
+
+        # ---------- PROCESAMIENTO ----------
+        # Tomar el último registro de cada código (el saldo más reciente)
+        # Nota: asumimos que los registros están en orden cronológico (fecha ascendente)
         df_resumen['codigo_str'] = df_resumen['codigo'].astype(str)
         ultimos = df_resumen.groupby('codigo_str').last().reset_index(drop=True)
-        resumen = ultimos[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'saldo']].copy()
 
-        # Convertir saldo a numérico (eliminar comas y espacios)
-        resumen['saldo_num'] = resumen['saldo'].astype(str).str.replace(',', '').str.replace(' ', '').astype(float)
+        # Convertir saldo a numérico (eliminar comas, espacios y símbolos)
+        def limpiar_numero(x):
+            if pd.isna(x):
+                return 0.0
+            s = str(x).strip()
+            # Eliminar comas, espacios, símbolos de moneda
+            s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
+            try:
+                return float(s)
+            except:
+                return 0.0
+
+        ultimos['saldo_num'] = ultimos['saldo'].apply(limpiar_numero)
 
         # Ordenar por torre y saldo descendente
-        resumen = resumen.sort_values(['torre', 'saldo_num'], ascending=[True, False])
+        ultimos = ultimos.sort_values(['torre', 'saldo_num'], ascending=[True, False])
 
         # Formatear saldo para mostrar
-        resumen['SALDO A PAGAR'] = resumen['saldo_num'].apply(lambda x: f"{x:,.2f}")
+        ultimos['SALDO A PAGAR'] = ultimos['saldo_num'].apply(lambda x: f"{x:,.2f}")
 
         # Renombrar columnas para la tabla final
-        resumen_final = resumen[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'SALDO A PAGAR']].copy()
+        resumen_final = ultimos[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'SALDO A PAGAR']].copy()
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES', 'SALDO A PAGAR']
 
         # Buscador
@@ -388,8 +423,9 @@ with tab2:
 
         # Subtotales por torre
         st.subheader("Subtotales por Torre")
+        # Calcular sumas correctamente
         subtotales = resumen_final.groupby('TORRE')['SALDO A PAGAR'].agg(
-            lambda x: sum(float(v.replace(',', '')) for v in x)
+            lambda x: sum(limpiar_numero(v) for v in x)
         ).reset_index()
         subtotales['SALDO A PAGAR'] = subtotales['SALDO A PAGAR'].apply(lambda x: f"{x:,.2f}")
         st.dataframe(subtotales, use_container_width=True)
