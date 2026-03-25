@@ -362,6 +362,24 @@ with tab2:
                     if col in df_guardado.columns:
                         df_guardado[col] = df_guardado[col].apply(formatear_numero)
 
+                # ---------- CALCULAR TOTAL DE AMORTIZACIÓN ----------
+                def extraer_numero(val):
+                    if pd.isna(val) or val == '':
+                        return 0.0
+                    s = str(val).strip()
+                    s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
+                    try:
+                        return float(s)
+                    except:
+                        return 0.0
+
+                total_amort = df_guardado['AMORTIZACION CONVENIO'].apply(extraer_numero).sum()
+                total_formateado = f"S/ {total_amort:,.2f}"
+
+                # Mostrar indicador de total
+                st.metric("💰 Total de Amortización por Convenio", total_formateado)
+                st.markdown("---")
+
                 # Índice empezando en 1
                 df_guardado = df_guardado.reset_index(drop=True)
                 df_guardado.index = df_guardado.index + 1
