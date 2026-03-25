@@ -65,6 +65,11 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             # ========== PROGRAMACIÓN ==========
             prog_df = gsheets.leer_programacion(mes, anio)
+            # ========== DEPURACIÓN (descomenta para ver) ==========
+            # st.write("**Columnas en prog_df:**", prog_df.columns.tolist())
+            # st.write("**Primeras 5 filas de prog_df:**")
+            # st.dataframe(prog_df.head(5))
+            # ==================================================
             if prog_df.empty:
                 st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
                 prog_df = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
@@ -78,6 +83,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                     if col_mant:
                         prog_df.rename(columns={col_mant: 'Mantenimiento'}, inplace=True)
                     else:
+                        st.warning("No se encontró columna de monto en programación. Se usará 0.")
                         prog_df['Mantenimiento'] = 0
                 prog_df = prog_df[['torre', 'departamento', 'Mantenimiento']].copy()
                 for col in ['torre', 'departamento', 'Mantenimiento']:
@@ -240,7 +246,7 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             html += '<thead>'
 
             # Primera fila: PROGRAMACION y PAGOS
-            html += '<tr>'
+            html += '表'
             # Celdas antes de PROGRAMACION
             for i in range(prog_first):
                 html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
