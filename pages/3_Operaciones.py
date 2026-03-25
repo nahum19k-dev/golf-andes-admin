@@ -354,7 +354,7 @@ with tab2:
         # Convertir nombres de columnas a minúsculas para búsqueda flexible
         df_resumen.columns = [col.lower() for col in df_resumen.columns]
 
-        # Mapeo de columnas necesarias (búsqueda por palabras clave)
+        # Mapeo de columnas necesarias
         col_mapping = {}
         for col in df_resumen.columns:
             if 'torre' in col:
@@ -369,9 +369,13 @@ with tab2:
                 col_mapping['nombre'] = col
             elif 'saldo' in col:
                 col_mapping['saldo'] = col
+            elif 'total_programacion' in col:
+                col_mapping['total_programacion'] = col
+            elif 'total_pagado' in col:
+                col_mapping['total_pagado'] = col
 
-        # Verificar que se encontraron todas las columnas esenciales
-        esenciales = ['torre', 'departamento', 'codigo', 'dni', 'nombre', 'saldo']
+        # Verificar columnas esenciales
+        esenciales = ['torre', 'departamento', 'codigo', 'dni', 'nombre', 'saldo', 'total_programacion', 'total_pagado']
         faltan = [col for col in esenciales if col not in col_mapping]
         if faltan:
             st.error(f"Faltan columnas esenciales: {faltan}. Columnas disponibles: {list(df_resumen.columns)}")
@@ -382,12 +386,42 @@ with tab2:
         # Conservar solo las columnas necesarias
         df_resumen = df_resumen[esenciales]
 
-        # ---------- PROCESAMIENTO ----------
-        # Tomar el último registro de cada código (el saldo más reciente)
+        # ---------- AGREGACIÓN POR CÓDIGO ----------
+        # Tomar el primer registro (cargos) y el último registro (saldo) por código
+        # Para total programación: primer valor de total_programacion (cargos)
+        # Para total pagado: suma de total_pagado de todos los registros
+        # Para saldo: último valor de saldo
+        # Para torre, departamento, etc., tomamos el primer valor (son constantes)
         df_resumen['codigo_str'] = df_resumen['codigo'].astype(str)
-        ultimos = df_resumen.groupby('codigo_str').last().reset_index(drop=True)
 
-        # Convertir saldo a numérico (eliminar comas, espacios y símbolos)
+        # Agrupar por código
+        grupo = df_resumen.groupby('codigo_str')
+        # Total programación = primer valor de total_programacion (asumimos que la primera fila es la de cargos)
+        total_prog = grupo['total_programacion'].first()
+        # Total pagado = suma de total_pagado
+        total_pag = grupo['total_pagado'].sum()
+        # Saldo = último valor de saldo
+        saldo_final = grupo['saldo'].last()
+        # Datos constantes (torre, departamento, dni, nombre) tomamos el primero
+        torre = grupo['torre'].first()
+        departamento = grupo['departamento'].first()
+        codigo = grupo['codigo'].first()
+        dni = grupo['dni'].first()
+        nombre = grupo['nombre'].first()
+
+        # Crear DataFrame resumido
+        resumen = pd.DataFrame({
+            'torre': torre,
+            'departamento': departamento,
+            'codigo': codigo,
+            'dni': dni,
+            'nombre': nombre,
+            'total_programacion': total_prog,
+            'total_pagado': total_pag,
+            'saldo': saldo_final
+        }).reset_index(drop=True)
+
+        # Convertir valores a numérico (limpiar formato)
         def limpiar_numero(x):
             if pd.isna(x):
                 return 0.0
@@ -398,21 +432,33 @@ with tab2:
             except:
                 return 0.0
 
-        ultimos['saldo_num'] = ultimos['saldo'].apply(limpiar_numero)
+        for col in ['total_programacion', 'total_pagado', 'saldo']:
+            resumen[col] = resumen[col].apply(limpiar_numero)
 
         # Ordenar por torre y saldo descendente
-        ultimos = ultimos.sort_values(['torre', 'saldo_num'], ascending=[True, False])
+        resumen = resumen.sort_values(['torre', 'saldo'], ascending=[True, False])
 
-        # Formatear saldo para mostrar
-        ultimos['SALDO A PAGAR'] = ultimos['saldo_num'].apply(lambda x: f"{x:,.2f}")
+        # Formatear para mostrar
+        resumen['TOTAL PROGRAMACIÓN'] = resumen['total_programacion'].apply(lambda x: f"{x:,.2f}")
+        resumen['TOTAL PAGADO'] = resumen['total_pagado'].apply(lambda x: f"{x:,.2f}")
+        resumen['SALDO A PAGAR'] = resumen['saldo'].apply(lambda x: f"{x:,.2f}")
 
-        # Renombrar columnas para la tabla final
-        resumen_final = ultimos[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'SALDO A PAGAR']].copy()
-        resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES', 'SALDO A PAGAR']
+        # Renombrar columnas para tabla final
+        resumen_final = resumen[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'TOTAL PROGRAMACIÓN', 'TOTAL PAGADO', 'SALDO A PAGAR']].copy()
+        resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES', 'TOTAL PROGRAMACIÓN', 'TOTAL PAGADO', 'SALDO A PAGAR']
 
-        # ---------- TOTAL GENERAL ----------
-        total_saldo = sum(limpiar_numero(v) for v in resumen_final['SALDO A PAGAR'])
-        st.metric("💰 Total de Saldo a Pagar", f"S/ {total_saldo:,.2f}")
+        # ---------- TOTALES GENERALES ----------
+        total_prog_gral = resumen['total_programacion'].sum()
+        total_pag_gral = resumen['total_pagado'].sum()
+        total_saldo_gral = resumen['saldo'].sum()
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("💰 Total Programación", f"S/ {total_prog_gral:,.2f}")
+        with col2:
+            st.metric("💸 Total Pagado", f"S/ {total_pag_gral:,.2f}")
+        with col3:
+            st.metric("🏦 Total Saldo a Pagar", f"S/ {total_saldo_gral:,.2f}")
         st.markdown("---")
 
         # Buscador
@@ -427,12 +473,13 @@ with tab2:
         # Mostrar tabla
         st.dataframe(resumen_final, use_container_width=True, height=600)
 
-        # Subtotales por torre
+        # Subtotales por torre (incluyendo totales de programación, pagado y saldo)
         st.subheader("Subtotales por Torre")
-        subtotales = resumen_final.groupby('TORRE')['SALDO A PAGAR'].agg(
+        subtotales = resumen_final.groupby('TORRE')[['TOTAL PROGRAMACIÓN', 'TOTAL PAGADO', 'SALDO A PAGAR']].agg(
             lambda x: sum(limpiar_numero(v) for v in x)
         ).reset_index()
-        subtotales['SALDO A PAGAR'] = subtotales['SALDO A PAGAR'].apply(lambda x: f"{x:,.2f}")
+        for col in ['TOTAL PROGRAMACIÓN', 'TOTAL PAGADO', 'SALDO A PAGAR']:
+            subtotales[col] = subtotales[col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(subtotales, use_container_width=True)
 
         # Descarga a Excel
