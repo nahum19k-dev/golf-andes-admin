@@ -179,7 +179,16 @@ def leer_pagos_mes(mes: str, anio: int):
 
     df_out = df_out.sort_values('fecha')
     return df_out
-
+def leer_hoja_pagos(nombre_hoja):
+    spreadsheet = get_spreadsheet()
+    worksheet = spreadsheet.worksheet(nombre_hoja)
+    datos = worksheet.get_all_values()
+    if len(datos) < 2:
+        return pd.DataFrame()
+    headers = datos[0]
+    filas = datos[1:]
+    df = pd.DataFrame(filas, columns=headers)
+    return df
 # ------------------- Medidores -------------------
 def guardar_medidor(df: pd.DataFrame, mes: str, anio: int):
     nombre_base = f"Medidor {mes} {anio}"
