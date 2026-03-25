@@ -321,6 +321,10 @@ def leer_hoja_deuda(nombre_hoja):
 
 # ====================== FUNCIONES DE LECTURA PARA OPERACIONES ======================
 def leer_programacion(mes: str, anio: int):
+    """
+    Lee la hoja de programación y devuelve torre, departamento y Mantenimiento.
+    Prioriza las columnas exactas "Torre" y "Departamento".
+    """
     nombre_hoja = f"Prog_{mes.upper()}_{anio}"
     spreadsheet = get_spreadsheet()
     try:
@@ -334,6 +338,26 @@ def leer_programacion(mes: str, anio: int):
     filas = datos[3:]
     df = pd.DataFrame(filas, columns=headers)
     df.columns = df.columns.str.strip().str.replace('\n', ' ')
+
+    # Buscar exactamente "Torre" y "Departamento" (insensible a mayúsculas)
+    col_torre = None
+    col_dpto = None
+    for col in df.columns:
+        if col.lower() == 'torre':
+            col_torre = col
+        if col.lower() == 'departamento':
+            col_dpto = col
+    # Si no se encuentran, fallback a búsqueda amplia
+    if col_torre is None or col_dpto is None:
+        for col in df.columns:
+            if 'torre' in col.lower():
+                col_torre = col
+            if 'departamento' in col.lower() or 'dpto' in col.lower():
+                col_dpto = col
+        if col_torre is None or col_dpto is None:
+            return pd.DataFrame()
+
+    # Buscar columna de total (mantenimiento)
     col_total = None
     for col in df.columns:
         col_low = col.lower()
@@ -342,20 +366,18 @@ def leer_programacion(mes: str, anio: int):
             break
     if col_total is None:
         return pd.DataFrame()
-    col_torre = None
-    col_dpto = None
-    for col in df.columns:
-        col_low = col.lower()
-        if 'torre' in col_low:
-            col_torre = col
-        elif 'departamento' in col_low or 'dpto' in col_low:
-            col_dpto = col
-    if not (col_torre and col_dpto):
-        return pd.DataFrame()
+
     df_out = pd.DataFrame()
     df_out['torre'] = pd.to_numeric(df[col_torre], errors='coerce')
     df_out['departamento'] = pd.to_numeric(df[col_dpto], errors='coerce')
     df_out['Mantenimiento'] = pd.to_numeric(df[col_total], errors='coerce')
+
+    # Eliminar filas sin torre/departamento
+    df_out = df_out.dropna(subset=['torre', 'departamento'])
+    # Convertir a enteros nullable para que coincidan con propietarios
+    df_out['torre'] = df_out['torre'].astype('Int64')
+    df_out['departamento'] = df_out['departamento'].astype('Int64')
+
     return df_out
 
 def leer_amortizacion(mes: str, anio: int):
