@@ -251,6 +251,11 @@ with tab2:
             columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN',
                               'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR', 'PAGOS', 'N°OPERACIÓN']
             columnas_existentes = [col for col in columnas_final if col in df_filtrado.columns]
+
+            # 🔥 Hacer que el índice empiece en 1
+            df_filtrado = df_filtrado.reset_index(drop=True)
+            df_filtrado.index = df_filtrado.index + 1
+
             st.dataframe(df_filtrado[columnas_existentes].fillna(""), use_container_width=True, height=600)
 
             # Botón de descarga a Excel
