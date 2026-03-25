@@ -20,7 +20,7 @@ if 'anio_actual' not in st.session_state:
 # ========== CREAR PESTAÑAS ==========
 tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
 
-# ====================== TAB 1: DETALLE POR DEPARTAMENTO (sin cambios) ======================
+# ====================== TAB 1: DETALLE POR DEPARTAMENTO ======================
 with tab1:
     # Selección de período y código
     col1, col2, col3 = st.columns([2, 2, 2])
@@ -281,7 +281,7 @@ with tab1:
                     pagos_span = pagos_last - pagos_first + 1
 
                     # Primera fila
-                    html += '    表\n'
+                    html += '    <tr>\n'
                     # Celdas vacías antes de PROGRAMACION
                     for i in range(prog_first):
                         html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
@@ -295,24 +295,24 @@ with tab1:
                     # Celdas vacías después de PAGOS
                     for i in range(pagos_last+1, len(col_names)):
                         html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '    表\n'
+                    html += '    </tr>\n'
 
                 # Segunda fila: nombres de columnas
-                html += '    表\n'
+                html += '    <tr>\n'
                 for col in col_names:
                     html += f'    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '    表\n'
+                html += '    </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 # Filas de datos
                 for _, row in df_final.iterrows():
-                    html += '    表\n'
+                    html += '    <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
-                        html += f'    <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}表\n'
-                    html += '    表\n'
-                html += '</tbody>\n表\n</div>'
+                        html += f'    <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
+                    html += '    </tr>\n'
+                html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
 
@@ -337,7 +337,7 @@ with tab1:
         else:
             st.info("Haz clic en 'Generar Estado de Cuenta' para cargar los datos.")
 
-# ====================== TAB 2: RESUMEN POR TORRES (modificada) ======================
+# ====================== TAB 2: RESUMEN POR TORRES ======================
 with tab2:
     st.subheader("Resumen de Saldos por Departamento")
 
@@ -347,11 +347,14 @@ with tab2:
         df_resumen = st.session_state.df_final.copy()
 
         # ---------- LIMPIEZA DE COLUMNAS ----------
+        # Si tiene MultiIndex, aplanar
         if isinstance(df_resumen.columns, pd.MultiIndex):
             df_resumen.columns = [col[1] if col[1] else col[0] for col in df_resumen.columns]
 
+        # Convertir nombres de columnas a minúsculas para búsqueda flexible
         df_resumen.columns = [col.lower() for col in df_resumen.columns]
 
+        # Mapeo de columnas necesarias
         col_mapping = {}
         for col in df_resumen.columns:
             if 'torre' in col:
@@ -364,28 +367,61 @@ with tab2:
                 col_mapping['dni'] = col
             elif 'nombre' in col:
                 col_mapping['nombre'] = col
-            elif 'deuda_inicial' in col:
-                col_mapping['deuda_inicial'] = col
-            elif 'mantenimiento' in col and 'pago' not in col:
-                col_mapping['mantenimiento'] = col
-            elif 'amortizacion' in col and 'pago' not in col:
-                col_mapping['amortizacion'] = col
-            elif 'medidor' in col and 'pago' not in col:
-                col_mapping['medidor'] = col
+            elif 'saldo' in col:
+                col_mapping['saldo'] = col
+            elif 'total_programacion' in col:
+                col_mapping['total_programacion'] = col
             elif 'total_pagado' in col:
                 col_mapping['total_pagado'] = col
 
-        esenciales = ['torre', 'departamento', 'codigo', 'dni', 'nombre',
-                      'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_pagado']
+        # Verificar columnas esenciales
+        esenciales = ['torre', 'departamento', 'codigo', 'dni', 'nombre', 'saldo', 'total_programacion', 'total_pagado']
         faltan = [col for col in esenciales if col not in col_mapping]
         if faltan:
             st.error(f"Faltan columnas esenciales: {faltan}. Columnas disponibles: {list(df_resumen.columns)}")
             st.stop()
 
+        # Renombrar a nombres estándar
         df_resumen = df_resumen.rename(columns={col_mapping[k]: k for k in esenciales})
+        # Conservar solo las columnas necesarias
         df_resumen = df_resumen[esenciales]
 
-        # ---------- FUNCIÓN PARA LIMPIAR NÚMEROS ----------
+        # ---------- AGREGACIÓN POR CÓDIGO ----------
+        # Tomar el primer registro (cargos) y el último registro (saldo) por código
+        # Para total programación: primer valor de total_programacion (cargos)
+        # Para total pagado: suma de total_pagado de todos los registros
+        # Para saldo: último valor de saldo
+        # Para torre, departamento, etc., tomamos el primer valor (son constantes)
+        df_resumen['codigo_str'] = df_resumen['codigo'].astype(str)
+
+        # Agrupar por código
+        grupo = df_resumen.groupby('codigo_str')
+        # Total programación = primer valor de total_programacion (asumimos que la primera fila es la de cargos)
+        total_prog = grupo['total_programacion'].first()
+        # Total pagado = suma de total_pagado
+        total_pag = grupo['total_pagado'].sum()
+        # Saldo = último valor de saldo
+        saldo_final = grupo['saldo'].last()
+        # Datos constantes (torre, departamento, dni, nombre) tomamos el primero
+        torre = grupo['torre'].first()
+        departamento = grupo['departamento'].first()
+        codigo = grupo['codigo'].first()
+        dni = grupo['dni'].first()
+        nombre = grupo['nombre'].first()
+
+        # Crear DataFrame resumido
+        resumen = pd.DataFrame({
+            'torre': torre,
+            'departamento': departamento,
+            'codigo': codigo,
+            'dni': dni,
+            'nombre': nombre,
+            'total_programacion': total_prog,
+            'total_pagado': total_pag,
+            'saldo': saldo_final
+        }).reset_index(drop=True)
+
+        # Convertir valores a numérico (limpiar formato)
         def limpiar_numero(x):
             if pd.isna(x):
                 return 0.0
@@ -396,68 +432,32 @@ with tab2:
             except:
                 return 0.0
 
-        for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_pagado']:
-            df_resumen[col] = df_resumen[col].apply(limpiar_numero)
+        for col in ['total_programacion', 'total_pagado', 'saldo']:
+            resumen[col] = resumen[col].apply(limpiar_numero)
 
-        # ---------- AGREGACIÓN POR DEPARTAMENTO ----------
-        df_resumen['codigo_str'] = df_resumen['codigo'].astype(str)
-        grupo = df_resumen.groupby('codigo_str')
-
-        # Tomar el primer registro (cargos)
-        primer_registro = grupo.first().reset_index(drop=True)
-        # Calcular Total Programación = mantenimiento + amortizacion + medidor
-        primer_registro['total_programacion'] = (
-            primer_registro['mantenimiento'] +
-            primer_registro['amortizacion'] +
-            primer_registro['medidor']
-        )
-        # Calcular Total Deuda = deuda_inicial + mantenimiento + amortizacion + medidor
-        primer_registro['total_deuda'] = (
-            primer_registro['deuda_inicial'] +
-            primer_registro['mantenimiento'] +
-            primer_registro['amortizacion'] +
-            primer_registro['medidor']
-        )
-
-        # Sumar total pagado por código
-        total_pagado_por_codigo = grupo['total_pagado'].sum().reset_index(name='total_pagado')
-        total_pagado_por_codigo['codigo_str'] = total_pagado_por_codigo['codigo_str'].astype(str)
-
-        # Combinar
-        resumen = primer_registro.merge(total_pagado_por_codigo, on='codigo_str', how='left')
-        resumen['total_pagado'] = resumen['total_pagado'].fillna(0)
-
-        # Saldo a Pagar = Total Deuda - Total Pagado
-        resumen['saldo_a_pagar'] = resumen['total_deuda'] - resumen['total_pagado']
-
-        # Ordenar
-        resumen = resumen.sort_values(['torre', 'saldo_a_pagar'], ascending=[True, False])
+        # Ordenar por torre y saldo descendente
+        resumen = resumen.sort_values(['torre', 'saldo'], ascending=[True, False])
 
         # Formatear para mostrar
         resumen['TOTAL PROGRAMACIÓN'] = resumen['total_programacion'].apply(lambda x: f"{x:,.2f}")
-        resumen['TOTAL DEUDA'] = resumen['total_deuda'].apply(lambda x: f"{x:,.2f}")
         resumen['TOTAL PAGADO'] = resumen['total_pagado'].apply(lambda x: f"{x:,.2f}")
-        resumen['SALDO A PAGAR'] = resumen['saldo_a_pagar'].apply(lambda x: f"{x:,.2f}")
+        resumen['SALDO A PAGAR'] = resumen['saldo'].apply(lambda x: f"{x:,.2f}")
 
-        resumen_final = resumen[['torre', 'departamento', 'codigo', 'dni', 'nombre',
-                                  'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']].copy()
-        resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES',
-                                 'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
+        # Renombrar columnas para tabla final
+        resumen_final = resumen[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'TOTAL PROGRAMACIÓN', 'TOTAL PAGADO', 'SALDO A PAGAR']].copy()
+        resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES', 'TOTAL PROGRAMACIÓN', 'TOTAL PAGADO', 'SALDO A PAGAR']
 
         # ---------- TOTALES GENERALES ----------
         total_prog_gral = resumen['total_programacion'].sum()
-        total_deuda_gral = resumen['total_deuda'].sum()
         total_pag_gral = resumen['total_pagado'].sum()
-        total_saldo_gral = resumen['saldo_a_pagar'].sum()
+        total_saldo_gral = resumen['saldo'].sum()
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("💰 Total Programación", f"S/ {total_prog_gral:,.2f}")
         with col2:
-            st.metric("📊 Total Deuda", f"S/ {total_deuda_gral:,.2f}")
-        with col3:
             st.metric("💸 Total Pagado", f"S/ {total_pag_gral:,.2f}")
-        with col4:
+        with col3:
             st.metric("🏦 Total Saldo a Pagar", f"S/ {total_saldo_gral:,.2f}")
         st.markdown("---")
 
@@ -473,12 +473,12 @@ with tab2:
         # Mostrar tabla
         st.dataframe(resumen_final, use_container_width=True, height=600)
 
-        # Subtotales por torre
+        # Subtotales por torre (incluyendo totales de programación, pagado y saldo)
         st.subheader("Subtotales por Torre")
-        subtotales = resumen_final.groupby('TORRE')[['TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']].agg(
+        subtotales = resumen_final.groupby('TORRE')[['TOTAL PROGRAMACIÓN', 'TOTAL PAGADO', 'SALDO A PAGAR']].agg(
             lambda x: sum(limpiar_numero(v) for v in x)
         ).reset_index()
-        for col in ['TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']:
+        for col in ['TOTAL PROGRAMACIÓN', 'TOTAL PAGADO', 'SALDO A PAGAR']:
             subtotales[col] = subtotales[col].apply(lambda x: f"{x:,.2f}")
         st.dataframe(subtotales, use_container_width=True)
 
