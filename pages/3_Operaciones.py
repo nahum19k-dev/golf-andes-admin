@@ -93,7 +93,6 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 prog_df['torre'] = pd.to_numeric(prog_df['torre'], errors='coerce').astype('Int64')
                 prog_df['departamento'] = pd.to_numeric(prog_df['departamento'], errors='coerce').astype('Int64')
                 prog_df['Mantenimiento'] = pd.to_numeric(prog_df['Mantenimiento'], errors='coerce').fillna(0)
-                # Eliminar filas sin torre/departamento
                 prog_df = prog_df.dropna(subset=['torre', 'departamento'])
 
             # ========== AMORTIZACIÓN ==========
