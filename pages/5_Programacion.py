@@ -211,6 +211,24 @@ with tab1:
                 # Eliminar columnas duplicadas por si acaso
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
 
+                # ---------- CALCULAR TOTAL DE MANTENIMIENTO ----------
+                def extraer_numero(val):
+                    if pd.isna(val) or val == '':
+                        return 0.0
+                    s = str(val).strip()
+                    s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
+                    try:
+                        return float(s)
+                    except:
+                        return 0.0
+
+                total_mantenimiento = df_viz['MANTENIMIENTO (S/)'].apply(extraer_numero).sum()
+                total_formateado = f"S/ {total_mantenimiento:,.2f}"
+
+                # Mostrar indicador de total
+                st.metric("💰 Total de Mantenimiento", total_formateado)
+                st.markdown("---")
+
                 # Orden de columnas deseado
                 columnas_final = ['TORRE', 'N°DPTO', 'NOMBRES Y APELLIDOS', 'DNI', 'MANTENIMIENTO (S/)']
                 # Seleccionar solo las que existen
