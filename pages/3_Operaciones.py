@@ -14,6 +14,9 @@ with col1:
 with col2:
     anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
 
+# Campo de búsqueda por código
+codigo_buscar = st.text_input("Buscar por código (opcional)", placeholder="Ej: 01101")
+
 if st.button("Generar Estado de Cuenta", type="primary"):
     with st.spinner("Cargando datos..."):
         try:
@@ -37,9 +40,16 @@ if st.button("Generar Estado de Cuenta", type="primary"):
 
             base = prop[[col_torre_prop, col_depto_prop, 'codigo', 'dni', 'nombre']].copy()
             base.rename(columns={col_torre_prop: 'torre', col_depto_prop: 'departamento'}, inplace=True)
-            base['torre'] = pd.to_numeric(base['torre'], errors='coerce')
-            base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce')
+            base['torre'] = pd.to_numeric(base['torre'], errors='coerce').astype('Int64')
+            base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce').astype('Int64')
             base = base.dropna(subset=['torre', 'departamento'])
+
+            # Si se ingresó un código, filtrar la base
+            if codigo_buscar:
+                base = base[base['codigo'].astype(str).str.contains(codigo_buscar, na=False)]
+                if base.empty:
+                    st.warning(f"No se encontró ningún propietario con código {codigo_buscar}")
+                    st.stop()
 
             # ========== DEUDA INICIAL ==========
             deuda_df = gsheets.leer_deuda_inicial(anio)
@@ -56,8 +66,8 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 if col_t and col_d and col_dd:
                     deuda_df = deuda_df[[col_t, col_d, col_dd]].copy()
                     deuda_df.rename(columns={col_t: 'torre', col_d: 'departamento', col_dd: 'deuda_inicial'}, inplace=True)
-                    deuda_df['torre'] = pd.to_numeric(deuda_df['torre'], errors='coerce')
-                    deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce')
+                    deuda_df['torre'] = pd.to_numeric(deuda_df['torre'], errors='coerce').astype('Int64')
+                    deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce').astype('Int64')
                     deuda_df['deuda_inicial'] = pd.to_numeric(deuda_df['deuda_inicial'], errors='coerce').fillna(0)
                 else:
                     st.warning("No se identificaron columnas de deuda. Se usará 0.")
@@ -70,20 +80,15 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 prog_df = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
             else:
                 if 'Mantenimiento' not in prog_df.columns:
-                    col_mant = None
-                    for col in prog_df.columns:
-                        if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
-                            col_mant = col
-                            break
+                    col_mant = next((c for c in prog_df.columns if 'total' in c.lower() or 'mantenimiento' in c.lower()), None)
                     if col_mant:
                         prog_df.rename(columns={col_mant: 'Mantenimiento'}, inplace=True)
                     else:
                         prog_df['Mantenimiento'] = 0
                 prog_df = prog_df[['torre', 'departamento', 'Mantenimiento']].copy()
-                for col in ['torre', 'departamento', 'Mantenimiento']:
-                    if col in prog_df.columns:
-                        prog_df[col] = pd.to_numeric(prog_df[col], errors='coerce')
-                prog_df['Mantenimiento'] = prog_df['Mantenimiento'].fillna(0)
+                prog_df['torre'] = prog_df['torre'].astype('Int64')
+                prog_df['departamento'] = prog_df['departamento'].astype('Int64')
+                prog_df['Mantenimiento'] = pd.to_numeric(prog_df['Mantenimiento'], errors='coerce').fillna(0)
 
             # ========== AMORTIZACIÓN ==========
             amort_df = gsheets.leer_amortizacion(mes, anio)
@@ -91,11 +96,8 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 st.warning(f"No se encontró amortización para {mes} {anio}. Amortización = 0.")
                 amort_df = pd.DataFrame(columns=['torre', 'departamento', 'amortizacion'])
             else:
-                for col in ['torre', 'departamento', 'amortizacion']:
-                    if col in amort_df.columns:
-                        amort_df[col] = pd.to_numeric(amort_df[col], errors='coerce')
                 amort_df = amort_df[['torre', 'departamento', 'amortizacion']].copy()
-                amort_df['amortizacion'] = amort_df['amortizacion'].fillna(0)
+                amort_df['amortizacion'] = pd.to_numeric(amort_df['amortizacion'], errors='coerce').fillna(0)
 
             # ========== MEDIDORES ==========
             med_df = gsheets.leer_medidores(mes, anio)
@@ -103,11 +105,8 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 st.warning(f"No se encontraron medidores para {mes} {anio}. Medidor = 0.")
                 med_df = pd.DataFrame(columns=['torre', 'departamento', 'monto'])
             else:
-                for col in ['torre', 'departamento', 'monto']:
-                    if col in med_df.columns:
-                        med_df[col] = pd.to_numeric(med_df[col], errors='coerce')
                 med_df = med_df[['torre', 'departamento', 'monto']].copy()
-                med_df['monto'] = med_df['monto'].fillna(0)
+                med_df['monto'] = pd.to_numeric(med_df['monto'], errors='coerce').fillna(0)
 
             # ========== PAGOS ==========
             pagos_df = gsheets.leer_pagos_mes(mes, anio)
@@ -116,11 +115,10 @@ if st.button("Generar Estado de Cuenta", type="primary"):
                 pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                                  'mantenimiento', 'amortizacion', 'medidor'])
             else:
-                for col in ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
-                    if col in pagos_df.columns:
-                        pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce').fillna(0)
                 pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                      'mantenimiento', 'amortizacion', 'medidor']].copy()
+                for col in ['ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
+                    pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce').fillna(0)
                 pagos_df = pagos_df.sort_values('fecha')
 
             # ========== UNIR TABLAS ==========
@@ -216,67 +214,11 @@ if st.button("Generar Estado de Cuenta", type="primary"):
             df_final = df_final.reset_index(drop=True)
             df_final.insert(0, '#', range(1, len(df_final)+1))
 
-            # ========== GENERAR TABLA HTML CON DOS CABECERAS AGRUPADAS ==========
-            col_names = list(df_final.columns)
-
-            # Grupos de columnas
-            grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
-            grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
-
-            # Encontrar índices
-            prog_indices = [col_names.index(c) for c in grupo_prog if c in col_names]
-            prog_first = min(prog_indices) if prog_indices else 0
-            prog_last = max(prog_indices) if prog_indices else 0
-            prog_span = prog_last - prog_first + 1
-
-            pagos_indices = [col_names.index(c) for c in grupo_pagos if c in col_names]
-            pagos_first = min(pagos_indices) if pagos_indices else 0
-            pagos_last = max(pagos_indices) if pagos_indices else 0
-            pagos_span = pagos_last - pagos_first + 1
-
-            # Construir HTML con etiquetas correctas y estilos compactos
-            html = '<div style="overflow-x: auto; max-width: 100%;">'
-            html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">'
-            html += '<thead>'
-
-            # Primera fila: PROGRAMACION y PAGOS
-            html += '<tr>'
-            # Celdas antes de PROGRAMACION
-            for i in range(prog_first):
-                html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-            html += f'<th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>'
-            # Celdas entre PROGRAMACION y PAGOS
-            for i in range(prog_last+1, pagos_first):
-                html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-            html += f'<th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>'
-            # Celdas después de PAGOS
-            for i in range(pagos_last+1, len(col_names)):
-                html += '<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>'
-            html += '</tr>'
-
-            # Segunda fila: nombres de columnas
-            html += '<tr>'
-            for col in col_names:
-                html += f'<th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>'
-            html += '</tr>'
-            html += '</thead><tbody>'
-
-            # Filas de datos
-            for _, row in df_final.iterrows():
-                html += '<tr>'
-                for col in col_names:
-                    val = row[col]
-                    # Alineación derecha para números
-                    if col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
-                               'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']:
-                        align = 'right'
-                    else:
-                        align = 'left'
-                    html += f'<td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>'
-                html += '</tr>'
-            html += '</tbody></table></div>'
-
-            st.markdown(html, unsafe_allow_html=True)
+            # Mostrar tabla
+            st.subheader(f"Estado de Cuenta - {mes} {anio}")
+            if codigo_buscar:
+                st.info(f"Mostrando resultados para código: {codigo_buscar}")
+            st.dataframe(df_final, use_container_width=True, height=600)
 
             # Descarga a Excel
             import io
