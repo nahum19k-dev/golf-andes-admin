@@ -7,11 +7,15 @@ st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
 
 st.title("📊 Operaciones - Estado de Cuenta por Departamento")
 
-# Inicializar session_state para almacenar los datos cargados
+# Inicializar session_state
 if 'df_final' not in st.session_state:
     st.session_state.df_final = None
 if 'datos_cargados' not in st.session_state:
     st.session_state.datos_cargados = False
+if 'mes_actual' not in st.session_state:
+    st.session_state.mes_actual = None
+if 'anio_actual' not in st.session_state:
+    st.session_state.anio_actual = None
 
 # Crear pestañas
 tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
@@ -229,13 +233,13 @@ with tab1:
                 df_final = df_final.reset_index(drop=True)
                 df_final.insert(0, '#', range(1, len(df_final)+1))
 
-                # Guardar en session_state para usar en la segunda pestaña
-                st.session_state.df_final = df_final
+                # Guardar en session_state para la segunda pestaña
+                st.session_state.df_final = df_final.copy()
                 st.session_state.datos_cargados = True
-                st.session_state.mes = mes
-                st.session_state.anio = anio
+                st.session_state.mes_actual = mes
+                st.session_state.anio_actual = anio
 
-                # Aplicar filtro por código
+                # Aplicar filtro por código para mostrar en la primera pestaña
                 if codigo_filtro.strip():
                     mask = df_final['codigo'].astype(str).str.contains(codigo_filtro.strip(), case=False, na=False)
                     df_final_filtrado = df_final[mask].copy()
@@ -245,35 +249,72 @@ with tab1:
                         df_final_filtrado = df_final_filtrado.reset_index(drop=True)
                         df_final_filtrado.index = df_final_filtrado.index + 1
                         df_final_filtrado['#'] = df_final_filtrado.index
-                    df_final_mostrar = df_final_filtrado
+                    df_mostrar = df_final_filtrado
                 else:
-                    df_final_mostrar = df_final
+                    df_mostrar = df_final
 
-                # Mostrar tabla con MultiIndex
-                grupos = {
-                    '': ['#', 'fecha', 'codigo', 'dni', 'nombre'],
-                    'PROGRAMACION': ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion'],
-                    'PAGOS': ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
-                }
-                niveles = []
-                for grupo, cols in grupos.items():
-                    for col in cols:
-                        if col in df_final_mostrar.columns:
-                            niveles.append((grupo, col))
-                if niveles:
-                    orden = list(df_final_mostrar.columns)
-                    niveles_ordenados = [n for n in niveles if n[1] in orden]
-                    df_final_mostrar.columns = pd.MultiIndex.from_tuples(niveles_ordenados)
-                    df_final_mostrar = df_final_mostrar[[(g, c) for g, c in niveles_ordenados]]
-                st.dataframe(df_final_mostrar, use_container_width=True, height=600)
+                # ========== GENERAR TABLA HTML CON CABECERAS AGRUPADAS ==========
+                col_names = list(df_mostrar.columns)
+
+                # Grupos de columnas
+                grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
+                grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
+
+                # Encontrar índices
+                prog_indices = [i for i, col in enumerate(col_names) if col in grupo_prog]
+                pagos_indices = [i for i, col in enumerate(col_names) if col in grupo_pagos]
+
+                # Construir HTML
+                html = '<div style="overflow-x: auto; max-width: 100%;">\n'
+                html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">\n'
+                html += '<thead>\n'
+
+                if prog_indices and pagos_indices:
+                    prog_first = min(prog_indices)
+                    prog_last = max(prog_indices)
+                    prog_span = prog_last - prog_first + 1
+                    pagos_first = min(pagos_indices)
+                    pagos_last = max(pagos_indices)
+                    pagos_span = pagos_last - pagos_first + 1
+
+                    html += '   <tr>\n'
+                    # Celdas vacías antes de PROGRAMACION
+                    for i in range(prog_first):
+                        html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
+                    html += f'    <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
+                    # Celdas vacías entre grupos
+                    for i in range(prog_last+1, pagos_first):
+                        html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
+                    html += f'    <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
+                    # Celdas vacías después de PAGOS
+                    for i in range(pagos_last+1, len(col_names)):
+                        html += '    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
+                    html += '   </tr>\n'
+
+                # Segunda fila: nombres de columnas
+                html += '   <tr>\n'
+                for col in col_names:
+                    html += f'    <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
+                html += '   </tr>\n'
+                html += '</thead>\n<tbody>\n'
+
+                # Filas de datos
+                for _, row in df_mostrar.iterrows():
+                    html += '   <tr>\n'
+                    for col in col_names:
+                        val = row[col]
+                        align = 'right' if col in grupo_prog + grupo_pagos else 'left'
+                        html += f'    <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
+                    html += '   </tr>\n'
+                html += '</tbody>\n</table>\n</div>'
+
+                st.markdown(html, unsafe_allow_html=True)
 
                 # Descarga a Excel
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_export = df_final.copy()
-                    df_export.columns = [col[1] for col in df_export.columns] if isinstance(df_export.columns, pd.MultiIndex) else df_export.columns
-                    df_export.to_excel(writer, index=False, sheet_name=f"Operaciones_{mes}_{anio}")
+                    df_final.to_excel(writer, index=False, sheet_name=f"Operaciones_{mes}_{anio}")
                 excel_data = output.getvalue()
                 st.download_button(
                     label="📥 Descargar Excel",
@@ -286,7 +327,7 @@ with tab1:
                 st.error(f"Error al generar el estado de cuenta: {str(e)}")
     else:
         if st.session_state.datos_cargados:
-            st.info("Datos ya cargados. Puedes visualizar el resumen en la otra pestaña.")
+            st.info(f"Datos cargados para {st.session_state.mes_actual} {st.session_state.anio_actual}. Puedes visualizar el resumen en la otra pestaña.")
         else:
             st.info("Haz clic en 'Generar Estado de Cuenta' para cargar los datos.")
 
@@ -297,32 +338,31 @@ with tab2:
     if not st.session_state.datos_cargados or st.session_state.df_final is None:
         st.info("Primero genera los datos en la pestaña 'Detalle por Departamento'.")
     else:
-        df_final = st.session_state.df_final.copy()
-        mes = st.session_state.mes
-        anio = st.session_state.anio
+        df_resumen = st.session_state.df_final.copy()
+        mes_actual = st.session_state.mes_actual
+        anio_actual = st.session_state.anio_actual
 
-        # Obtener el último saldo por departamento (el que tiene la mayor fecha o el último registro)
-        # Asumimos que los registros están ordenados por fecha y que el último es el saldo final.
-        # Agrupamos por código y tomamos el último registro (por índice).
-        # Para asegurar orden, ordenamos por código y luego por índice (el último es el más reciente).
-        # Pero en df_final los registros ya están en orden cronológico, y cada departamento tiene varios registros.
-        # Tomamos el último registro de cada grupo (el de mayor índice).
-        df_final['codigo_str'] = df_final['codigo'].astype(str)
-        ultimos_saldos = df_final.groupby('codigo_str').last().reset_index(drop=True)
+        # Tomar el último registro de cada propiedad (más reciente)
+        # Asumimos que los registros están en orden cronológico (fecha ascendente) y que el último es el saldo final
+        df_resumen['codigo_str'] = df_resumen['codigo'].astype(str)
+        ultimos = df_resumen.groupby('codigo_str').last().reset_index(drop=True)
         # Seleccionar columnas relevantes
-        resumen = ultimos_saldos[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'saldo']].copy()
-        # Convertir saldo a numérico (ya está formateado con comas, pero podemos convertir)
-        # Primero limpiar el saldo (quitar comas y convertir a float)
+        resumen = ultimos[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'saldo']].copy()
+
+        # Convertir saldo a numérico para ordenar y sumar
         resumen['saldo_num'] = resumen['saldo'].astype(str).str.replace(',', '').str.replace(' ', '').astype(float)
-        # Ordenar por torre y luego por saldo descendente
+
+        # Ordenar: primero por torre, luego por saldo descendente
         resumen = resumen.sort_values(['torre', 'saldo_num'], ascending=[True, False])
+
         # Formatear saldo para mostrar
         resumen['SALDO A PAGAR'] = resumen['saldo_num'].apply(lambda x: f"{x:,.2f}")
-        # Seleccionar y renombrar columnas
+
+        # Renombrar columnas para la tabla final
         resumen_final = resumen[['torre', 'departamento', 'codigo', 'dni', 'nombre', 'SALDO A PAGAR']].copy()
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES', 'SALDO A PAGAR']
 
-        # Añadir buscador
+        # Buscador
         busqueda = st.text_input("Buscar por código o nombre", placeholder="Ej. 01101 o nombre")
         if busqueda:
             mask = (resumen_final['CÓDIGO'].astype(str).str.contains(busqueda, case=False, na=False) |
@@ -346,12 +386,12 @@ with tab2:
         import io
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            resumen_final.to_excel(writer, index=False, sheet_name=f"Resumen_Torres_{mes}_{anio}")
+            resumen_final.to_excel(writer, index=False, sheet_name=f"Resumen_Torres_{mes_actual}_{anio_actual}")
             subtotales.to_excel(writer, index=False, sheet_name="Subtotales")
         excel_data = output.getvalue()
         st.download_button(
             label="📥 Descargar Resumen en Excel",
             data=excel_data,
-            file_name=f"Resumen_Torres_{mes}_{anio}.xlsx",
+            file_name=f"Resumen_Torres_{mes_actual}_{anio_actual}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
