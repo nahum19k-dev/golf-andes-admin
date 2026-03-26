@@ -552,3 +552,47 @@ def leer_hoja_programacion(nombre_hoja):
     df_out = df_out.dropna(subset=['torre', 'departamento'])
     df_out = df_out.loc[:, ~df_out.columns.duplicated()]
     return df_out
+# ------------------- PROGRAMACION OTROS -------------------
+def guardar_otros(df: pd.DataFrame, mes: str, anio: int):
+    nombre_base = f"Otros {mes} {anio}"
+    spreadsheet = get_spreadsheet()
+    nombre_hoja = nombre_base
+    contador = 2
+    while True:
+        try:
+            spreadsheet.worksheet(nombre_hoja)
+            nombre_hoja = f"{nombre_base} ({contador})"
+            contador += 1
+        except gspread.exceptions.WorksheetNotFound:
+            break
+    nueva_hoja = spreadsheet.add_worksheet(title=nombre_hoja, rows=df.shape[0]+1, cols=df.shape[1])
+    df_para_guardar = df.copy()
+    for col in df_para_guardar.columns:
+        if pd.api.types.is_datetime64_any_dtype(df_para_guardar[col]):
+            df_para_guardar[col] = df_para_guardar[col].dt.strftime('%Y-%m-%d')
+        elif df_para_guardar[col].dtype == 'object':
+            df_para_guardar[col] = df_para_guardar[col].apply(
+                lambda x: x.strftime('%Y-%m-%d') if isinstance(x, pd.Timestamp) else x
+            )
+    df_para_guardar = df_para_guardar.astype(str).fillna("")
+    datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
+    nueva_hoja.update(datos, value_input_option="RAW")
+    return nombre_hoja
+
+def listar_hojas_otros():
+    spreadsheet = get_spreadsheet()
+    hojas = spreadsheet.worksheets()
+    nombres = [hoja.title for hoja in hojas if hoja.title.startswith("Otros")]
+    nombres.sort(reverse=True)
+    return nombres
+
+def leer_hoja_otros(nombre_hoja):
+    spreadsheet = get_spreadsheet()
+    worksheet = spreadsheet.worksheet(nombre_hoja)
+    datos = worksheet.get_all_values()
+    if len(datos) < 2:
+        return pd.DataFrame()
+    headers = datos[0]
+    filas = datos[1:]
+    df = pd.DataFrame(filas, columns=headers)
+    return df
