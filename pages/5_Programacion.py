@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import gsheets
+import gspread          # <-- Importación necesaria para la excepción WorksheetNotFound
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Programación", page_icon="📅", layout="wide")
