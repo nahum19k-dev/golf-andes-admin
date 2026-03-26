@@ -748,7 +748,6 @@ with tab4:
                         col_codigo = col
                     elif 'dni' in col_low:
                         col_dni = col
-                    # Detección más flexible para nombres (acepta espacios, guiones, etc.)
                     elif 'apellidos' in col_low or 'nombre' in col_low:
                         col_nombre = col
                     else:
@@ -795,7 +794,7 @@ with tab4:
                 # Eliminar filas sin torre o departamento
                 df_seleccionado = df_seleccionado.dropna(subset=['torre', 'departamento'])
 
-                # Rellenar NaN con 0
+                # Rellenar NaN con 0 para columnas de montos
                 for key in conceptos.keys():
                     df_seleccionado[key] = df_seleccionado[key].fillna(0)
 
@@ -815,8 +814,22 @@ with tab4:
                 st.dataframe(df_mostrar.head(8))
 
                 # Para guardar, usaremos las columnas que deben ir a la hoja
-                # (incluyendo todas las que se hayan detectado, en el orden deseado)
                 df_guardar = df_seleccionado[columnas_existentes].copy()
+
+                # --- LIMPIEZA FINAL: Reemplazar NaN por valores válidos ---
+                # Convertir NaN en columnas numéricas (montos) a 0
+                for col in ['CUOTA_EXTRAORDINARIAS', 'ALQUILER_PARRILLA', 'GARANTIA', 'SALA_ZOOM', 'ALQUILER_SILLAS']:
+                    if col in df_guardar.columns:
+                        df_guardar[col] = df_guardar[col].fillna(0)
+                # Convertir NaN en columnas de texto a string vacío
+                for col in ['codigo', 'dni', 'nombre']:
+                    if col in df_guardar.columns:
+                        df_guardar[col] = df_guardar[col].fillna('')
+
+                # También asegurar que torre y departamento sean números enteros (sin decimales)
+                df_guardar['torre'] = df_guardar['torre'].astype('Int64')
+                df_guardar['departamento'] = df_guardar['departamento'].astype('Int64')
+
                 df_otros = df_seleccionado  # Para usar después si se necesita
 
             except Exception as e:
