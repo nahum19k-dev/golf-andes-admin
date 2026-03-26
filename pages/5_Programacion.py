@@ -2,24 +2,22 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import gsheets
-import gspread          # <-- Importación necesaria para la excepción WorksheetNotFound
+import gspread
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Programación", page_icon="📅", layout="wide")
 
 st.title("📅 Programación Mensual - Subir desde Excel")
 
-# Crear pestañas principales con nuevo orden
+# Crear pestañas principales
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Programación Mantenimiento", "💧 Medidores", "💰 Amortización", "📌 Otros"])
 
 # ====================== TAB 1: PROGRAMACIÓN MANTENIMIENTO ======================
 with tab1:
-    # Sub‑pestañas dentro de Programación Mantenimiento
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Programación"])
 
-    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
-        col1, col2, col3 = st.columns([2, 2, 1])
+        col1, col2 = st.columns(2)  # Eliminada la tercera columna (n_deptos)
         with col1:
             mes = st.selectbox(
                 "Mes a programar",
@@ -28,8 +26,6 @@ with tab1:
             )
         with col2:
             anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
-        with col3:
-            n_deptos = st.number_input("N° Departamentos (divisor)", min_value=300, max_value=500, value=380, step=1)
 
         mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes) + 1
         fecha_emision_def = datetime(anio, mes_num, 23)
@@ -37,9 +33,9 @@ with tab1:
 
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            fecha_emision = st.date_input("Fecha de Emisión", value=fecha_emision_def)
+            fecha_emision = st.date_input("Fecha de Emisión", value=fecha_emision_def, key="fec_emision_mant")
         with col_f2:
-            fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def)
+            fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def, key="fec_venc_mant")
 
         st.divider()
         st.subheader("Subir archivo Excel de mantenimiento mensual")
@@ -117,19 +113,22 @@ with tab1:
                 st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
             else:
                 if st.button("Guardar en Google Sheets", type="primary", key="guardar_det_cuotas"):
-                    with st.spinner("Guardando..."):
-                        try:
-                            nombre_hoja = gsheets.crear_y_guardar_programacion(
-                                df_guardar, periodo_key, mes, int(anio)
-                            )
-                            st.success(f"Guardado en hoja: **{nombre_hoja}**")
-                        except Exception as e:
-                            st.error(f"Error al guardar: {e}")
+                    # Validar solapamiento de fechas
+                    if gsheets.existe_solapamiento_fechas("Mantenimiento", fecha_emision, fecha_vencimiento):
+                        st.error("❌ Ya existe una programación de Mantenimiento con un rango de fechas que se solapa con este. No se puede guardar.")
+                    else:
+                        with st.spinner("Guardando..."):
+                            try:
+                                nombre_hoja = gsheets.crear_y_guardar_programacion(
+                                    df_guardar, periodo_key, mes, int(anio)
+                                )
+                                gsheets.registrar_fecha_programacion("Mantenimiento", nombre_hoja, fecha_emision, fecha_vencimiento)
+                                st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                            except Exception as e:
+                                st.error(f"Error al guardar: {e}")
 
-    # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
     with subtab2:
         st.subheader("Programaciones Guardadas")
-
         try:
             hojas_prog = gsheets.listar_hojas_programacion()
         except Exception as e:
@@ -142,7 +141,6 @@ with tab1:
 
             if not df_guardado.empty:
                 df_guardado = df_guardado.drop_duplicates(subset=['torre', 'departamento'], keep='first')
-
                 prop = gsheets.leer_propietarios()
                 if not prop.empty:
                     col_torre_prop = None
@@ -239,10 +237,8 @@ with tab1:
 
 # ====================== TAB 2: MEDIDORES ======================
 with tab2:
-    # Sub‑pestañas dentro de Medidores
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Medidores"])
 
-    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
         col1, col2 = st.columns(2)
         with col1:
@@ -253,6 +249,19 @@ with tab2:
             anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1,
                                    key="anio_medidor")
 
+        # Fechas para Medidores
+        mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes) + 1
+        fecha_emision_def = datetime(anio, mes_num, 23)
+        fecha_venc_def = fecha_emision_def + timedelta(days=15)
+
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_emision = st.date_input("Fecha de Emisión", value=fecha_emision_def, key="fec_emision_med")
+        with col_f2:
+            fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def, key="fec_venc_med")
+
+        st.divider()
+
         uploaded_file = st.file_uploader("Sube el archivo Excel de MEDIDORES", type=["xlsx"],
                                          key="medidor_file")
 
@@ -260,11 +269,8 @@ with tab2:
             try:
                 # Leer archivo
                 df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
-
-                # Limpiar nombres de columnas
                 df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
-                # Función para buscar columna con prioridad
                 def find_column(priority_keywords, fallback_keywords=None):
                     for col in df_raw.columns:
                         col_lower = col.lower()
@@ -277,15 +283,13 @@ with tab2:
                                 return col
                     return None
 
-                # Detectar columnas
                 col_codigo = find_column(['codigo', 'código'])
                 col_edificio = find_column(['edificio', 'torre'])
                 col_dpto = find_column(['dpto', 'departamento'])
-                col_med_inst = find_column(['medidor instalado'])  # solo esta
+                col_med_inst = find_column(['medidor instalado'])
                 col_n_med = find_column(['n°', 'nº', 'número'], fallback_keywords=['medidor'])
                 col_monto = find_column(['monto a pagar', 'monto', 'pago'])
 
-                # Crear DataFrame con nombres estandarizados
                 df = pd.DataFrame()
                 if col_codigo:
                     df['codigo_raw'] = df_raw[col_codigo].astype(str).str.strip()
@@ -300,30 +304,25 @@ with tab2:
                 if col_monto:
                     df['monto'] = df_raw[col_monto]
 
-                # ========== FILTRADO ROBUSTO ==========
-                # 1. Código: eliminar TOTAL, mantener 4-5 dígitos
+                # Filtrado robusto
                 if 'codigo_raw' in df.columns:
-                    df['codigo_raw'] = df['codigo_raw'].str.split('.').str[0]  # quitar decimales
+                    df['codigo_raw'] = df['codigo_raw'].str.split('.').str[0]
                     df = df[~df['codigo_raw'].str.contains('TOTAL', case=False, na=False)]
                     df = df[df['codigo_raw'].str.match(r'^\d{4,5}$', na=False)]
 
-                # 2. Torre y departamento numéricos > 0
                 df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
                 df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
                 df = df.dropna(subset=['torre', 'departamento'])
                 df = df[(df['torre'] > 0) & (df['departamento'] > 0)]
 
-                # 3. Medidor instalado = "SI"
                 if 'medidor_instalado' in df.columns:
                     df['medidor_instalado'] = df['medidor_instalado'].str.upper().str.strip()
                     df = df[df['medidor_instalado'] == 'SI']
 
-                # 4. Número de medidor no vacío
                 if 'n_medidor' in df.columns:
                     df['n_medidor'] = df['n_medidor'].astype(str).str.strip()
                     df = df[df['n_medidor'].notna() & (df['n_medidor'] != '') & (df['n_medidor'] != 'nan')]
 
-                # 5. Monto > 0
                 if 'monto' in df.columns:
                     df['monto'] = pd.to_numeric(df['monto'], errors='coerce')
                     df = df[df['monto'] > 0]
@@ -334,19 +333,16 @@ with tab2:
 
                 st.info(f"✅ Filas válidas después de filtrar: {len(df)}")
 
-                # Código de 5 dígitos para mostrar
                 if 'codigo_raw' in df.columns:
                     df['codigo_5d'] = df['codigo_raw'].apply(lambda x: x.zfill(5) if len(x) == 4 else x)
                 else:
                     df['codigo_5d'] = ""
 
-                # Cargar propietarios
                 prop = gsheets.leer_propietarios()
                 if prop.empty:
                     st.error("No se pudo cargar Propietarios")
                     st.stop()
 
-                # Detectar columna de departamento en prop
                 depto_col_prop = None
                 posibles = ['departamento', 'dpto', 'depto', 'N°DPTO']
                 for col in prop.columns:
@@ -357,14 +353,10 @@ with tab2:
                     st.error("No se encontró columna de departamento en Propietarios. Columnas: " + ", ".join(prop.columns))
                     st.stop()
 
-                # Asegurar tipos numéricos en prop
                 prop['torre'] = pd.to_numeric(prop['torre'], errors='coerce')
                 prop[depto_col_prop] = pd.to_numeric(prop[depto_col_prop], errors='coerce')
-
-                # Eliminar duplicados en prop (misma torre y departamento)
                 prop = prop.drop_duplicates(subset=['torre', depto_col_prop], keep='first')
 
-                # Merge
                 df_merged = df.merge(
                     prop[['torre', depto_col_prop, 'nombre', 'dni', 'codigo']],
                     left_on=['torre', 'departamento'],
@@ -373,18 +365,15 @@ with tab2:
                 )
                 df_merged.rename(columns={'codigo': 'codigo_propietario'}, inplace=True)
 
-                # Separar coincidentes y no coincidentes
                 df_coinciden = df_merged[df_merged['nombre'].notna()].copy()
                 df_no_coinciden = df_merged[df_merged['nombre'].isna()].copy()
 
-                # Ordenar y resetear índice (empezar en 1)
                 df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento'])
                 df_coinciden.reset_index(drop=True, inplace=True)
                 df_coinciden.index = df_coinciden.index + 1
                 df_no_coinciden.reset_index(drop=True, inplace=True)
                 df_no_coinciden.index = df_no_coinciden.index + 1
 
-                # Formatear números sin .0
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -403,7 +392,6 @@ with tab2:
                     if col in df_no_coinciden.columns:
                         df_no_coinciden[col] = df_no_coinciden[col].apply(formatear_numero)
 
-                # Mostrar resultados
                 st.subheader("✅ Resultado del procesamiento")
 
                 if not df_coinciden.empty:
@@ -416,26 +404,27 @@ with tab2:
                     cols_no = ['codigo_5d', 'torre', 'departamento', 'medidor_instalado', 'n_medidor', 'monto']
                     st.dataframe(df_no_coinciden[cols_no].fillna(""), use_container_width=True, height=300)
 
-                # Botón guardar
                 if st.button("💾 Guardar en Google Sheets", type="primary"):
-                    try:
-                        df_guardar = df_coinciden[['codigo_5d', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']].copy()
-                        for col in ['codigo_5d', 'torre', 'departamento', 'n_medidor', 'monto']:
-                            if col in df_guardar.columns:
-                                df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce')
-                        df_guardar.columns = ['codigo', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']
-                        nombre_hoja = gsheets.guardar_medidor(df=df_guardar, mes=mes, anio=int(anio))
-                        st.success(f"Guardado en hoja: **{nombre_hoja}**")
-                    except Exception as e:
-                        st.error(f"Error al guardar: {str(e)}")
+                    if gsheets.existe_solapamiento_fechas("Medidores", fecha_emision, fecha_vencimiento):
+                        st.error("❌ Ya existe una programación de Medidores con un rango de fechas que se solapa con este. No se puede guardar.")
+                    else:
+                        try:
+                            df_guardar = df_coinciden[['codigo_5d', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']].copy()
+                            for col in ['codigo_5d', 'torre', 'departamento', 'n_medidor', 'monto']:
+                                if col in df_guardar.columns:
+                                    df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce')
+                            df_guardar.columns = ['codigo', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']
+                            nombre_hoja = gsheets.guardar_medidor(df=df_guardar, mes=mes, anio=int(anio))
+                            gsheets.registrar_fecha_programacion("Medidores", nombre_hoja, fecha_emision, fecha_vencimiento)
+                            st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                        except Exception as e:
+                            st.error(f"Error al guardar: {str(e)}")
 
             except Exception as e:
                 st.error(f"Error al procesar: {str(e)}")
 
-    # ---------- SUBTAB 2: VISUALIZAR MEDIDORES ----------
     with subtab2:
         st.subheader("📊 Visualizar Medidores Guardados")
-
         try:
             hojas_medidor = gsheets.listar_hojas_medidor()
         except Exception as e:
@@ -448,7 +437,6 @@ with tab2:
             df_guardado = gsheets.leer_hoja_medidor(hoja_seleccionada)
 
             if not df_guardado.empty:
-                # Función para formatear números sin .0 (igual que en la primera pestaña)
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -477,15 +465,10 @@ with tab2:
                 }
                 df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
-                # ---------- CALCULAR TOTAL DE MONTO ----------
-                # Extraer valores numéricos de la columna MONTO (S/) y sumarlos
-                # Primero convertir a número (ya están formateados como strings, pero podemos usar la función limpiar)
                 def extraer_numero(val):
                     if pd.isna(val) or val == '':
                         return 0.0
-                    # Eliminar caracteres no numéricos excepto punto decimal y signo menos
                     s = str(val).strip()
-                    # Eliminar comas, espacios, símbolos de moneda
                     s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
                     try:
                         return float(s)
@@ -495,18 +478,14 @@ with tab2:
                 total_monto = df_viz['MONTO (S/)'].apply(extraer_numero).sum()
                 total_formateado = f"S/ {total_monto:,.2f}"
 
-                # Mostrar indicador de total
                 st.metric("💰 Total de Monto a Pagar", total_formateado)
                 st.markdown("---")
 
-                # ---------- RESET INDEX PARA EMPEZAR EN 1 ----------
                 df_viz = df_viz.reset_index(drop=True)
                 df_viz.index = df_viz.index + 1
 
-                # Mostrar tabla
                 st.dataframe(df_viz, use_container_width=True, height=600)
 
-                # Botón descarga
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -525,10 +504,8 @@ with tab2:
 
 # ====================== TAB 3: AMORTIZACIÓN ======================
 with tab3:
-    # Sub‑pestañas dentro de Amortización
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Amortización"])
 
-    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
         col1, col2 = st.columns(2)
         with col1:
@@ -540,6 +517,19 @@ with tab3:
             )
         with col2:
             anio_amort = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1, key="anio_amort")
+
+        # Fechas para Amortización
+        mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes_amort) + 1
+        fecha_emision_def = datetime(anio_amort, mes_num, 23)
+        fecha_venc_def = fecha_emision_def + timedelta(days=15)
+
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_emision = st.date_input("Fecha de Emisión", value=fecha_emision_def, key="fec_emision_amort")
+        with col_f2:
+            fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def, key="fec_venc_amort")
+
+        st.divider()
 
         with st.expander("ℹ️ Formato esperado del archivo Excel"):
             st.info("""
@@ -595,21 +585,23 @@ with tab3:
 
         if df_amort is not None and not df_amort.empty:
             if st.button("Guardar en Google Sheets (Amortización)", type="primary", key="guardar_amort"):
-                with st.spinner("Guardando datos de amortización..."):
-                    try:
-                        nombre_hoja = gsheets.guardar_amortizacion(
-                            df_amort, mes_amort, int(anio_amort)
-                        )
-                        st.success(f"¡Guardado correctamente en hoja: **{nombre_hoja}**!")
-                    except Exception as e:
-                        st.error(f"Error al guardar: {str(e)}")
+                if gsheets.existe_solapamiento_fechas("Amortización", fecha_emision, fecha_vencimiento):
+                    st.error("❌ Ya existe una programación de Amortización con un rango de fechas que se solapa con este. No se puede guardar.")
+                else:
+                    with st.spinner("Guardando datos de amortización..."):
+                        try:
+                            nombre_hoja = gsheets.guardar_amortizacion(
+                                df_amort, mes_amort, int(anio_amort)
+                            )
+                            gsheets.registrar_fecha_programacion("Amortización", nombre_hoja, fecha_emision, fecha_vencimiento)
+                            st.success(f"¡Guardado correctamente en hoja: **{nombre_hoja}**!")
+                        except Exception as e:
+                            st.error(f"Error al guardar: {str(e)}")
         elif df_amort is not None and df_amort.empty:
             st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
 
-    # ---------- SUBTAB 2: VISUALIZAR AMORTIZACIÓN ----------
     with subtab2:
         st.subheader("Amortizaciones Guardadas")
-
         try:
             hojas_amort = gsheets.listar_hojas_amortizacion()
         except Exception as e:
@@ -676,10 +668,8 @@ with tab3:
 
 # ====================== TAB 4: OTROS (INGRESOS EXTRAORDINARIOS) ======================
 with tab4:
-    # Sub‑pestañas dentro de Otros
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Otros"])
 
-    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
         col1, col2 = st.columns(2)
         with col1:
@@ -691,6 +681,19 @@ with tab4:
             )
         with col2:
             anio_otros = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1, key="anio_otros")
+
+        # Fechas para Otros
+        mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes_otros) + 1
+        fecha_emision_def = datetime(anio_otros, mes_num, 23)
+        fecha_venc_def = fecha_emision_def + timedelta(days=15)
+
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_emision = st.date_input("Fecha de Emisión", value=fecha_emision_def, key="fec_emision_otros")
+        with col_f2:
+            fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def, key="fec_venc_otros")
+
+        st.divider()
 
         with st.expander("ℹ️ Formato esperado del archivo Excel"):
             st.info("""
@@ -715,20 +718,17 @@ with tab4:
 
         if uploaded_file_otros is not None:
             try:
-                # Leer archivo asumiendo encabezados en primera fila
                 df = pd.read_excel(uploaded_file_otros, sheet_name=0, header=0)
                 df.columns = df.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
                 df = df.dropna(axis=1, how='all')
                 df = df.dropna(how='all')
 
-                # Buscar las columnas necesarias
                 col_torre = None
                 col_dpto = None
                 col_codigo = None
                 col_dni = None
                 col_nombre = None
 
-                # Columnas de montos (conceptos)
                 conceptos = {
                     'CUOTA_EXTRAORDINARIAS': ['extraordinarias', 'cuota extraordinaria', 'extra'],
                     'ALQUILER_PARRILLA': ['parrilla', 'alquiler parrilla'],
@@ -751,7 +751,6 @@ with tab4:
                     elif 'apellidos' in col_low or 'nombre' in col_low:
                         col_nombre = col
                     else:
-                        # Buscar entre los conceptos
                         for key, keywords in conceptos.items():
                             if any(kw in col_low for kw in keywords):
                                 columnas_montos[key] = col
@@ -761,23 +760,19 @@ with tab4:
                     st.error("No se encontraron las columnas necesarias: TORRE y N°DPTO. Verifica el archivo.")
                     st.stop()
 
-                # Si no se encontró ninguna columna de monto, mostrar advertencia
                 if all(v is None for v in columnas_montos.values()):
                     st.warning("No se detectaron columnas de ingresos extraordinarios. Se creará un registro vacío.")
 
-                # Seleccionar y renombrar columnas
                 df_seleccionado = pd.DataFrame()
                 df_seleccionado['torre'] = df[col_torre]
                 df_seleccionado['departamento'] = df[col_dpto]
 
-                # Añadir columnas de montos
                 for key, col_monto in columnas_montos.items():
                     if col_monto is not None:
                         df_seleccionado[key] = df[col_monto]
                     else:
-                        df_seleccionado[key] = 0  # si no existe la columna, asignar 0
+                        df_seleccionado[key] = 0
 
-                # Añadir columnas opcionales
                 if col_codigo:
                     df_seleccionado['codigo'] = df[col_codigo]
                 if col_dni:
@@ -785,58 +780,45 @@ with tab4:
                 if col_nombre:
                     df_seleccionado['nombre'] = df[col_nombre]
 
-                # Convertir columnas numéricas
                 df_seleccionado['torre'] = pd.to_numeric(df_seleccionado['torre'], errors='coerce')
                 df_seleccionado['departamento'] = pd.to_numeric(df_seleccionado['departamento'], errors='coerce')
                 for key in conceptos.keys():
                     df_seleccionado[key] = pd.to_numeric(df_seleccionado[key], errors='coerce')
 
-                # Eliminar filas sin torre o departamento
                 df_seleccionado = df_seleccionado.dropna(subset=['torre', 'departamento'])
 
-                # Rellenar NaN con 0 para columnas de montos
                 for key in conceptos.keys():
                     df_seleccionado[key] = df_seleccionado[key].fillna(0)
 
                 st.success(f"Archivo leído: {len(df_seleccionado)} filas")
 
-                # --- REORDENAR COLUMNAS PARA LA VISTA PREVIA Y GUARDADO ---
-                # Definir el orden deseado de columnas
                 columnas_orden_deseado = [
                     'torre', 'departamento', 'codigo', 'dni', 'nombre',
                     'CUOTA_EXTRAORDINARIAS', 'ALQUILER_PARRILLA', 'GARANTIA', 'SALA_ZOOM', 'ALQUILER_SILLAS'
                 ]
-                # Seleccionar solo las que existen en df_seleccionado
                 columnas_existentes = [col for col in columnas_orden_deseado if col in df_seleccionado.columns]
-                # Crear una copia ordenada para mostrar
                 df_mostrar = df_seleccionado[columnas_existentes].copy()
                 st.write("Vista previa (primeras 8 filas):")
                 st.dataframe(df_mostrar.head(8))
 
-                # Para guardar, usaremos las columnas que deben ir a la hoja
                 df_guardar = df_seleccionado[columnas_existentes].copy()
 
-                # --- LIMPIEZA FINAL: Reemplazar NaN por valores válidos ---
-                # Convertir NaN en columnas numéricas (montos) a 0
                 for col in ['CUOTA_EXTRAORDINARIAS', 'ALQUILER_PARRILLA', 'GARANTIA', 'SALA_ZOOM', 'ALQUILER_SILLAS']:
                     if col in df_guardar.columns:
                         df_guardar[col] = df_guardar[col].fillna(0)
-                # Convertir NaN en columnas de texto a string vacío
                 for col in ['codigo', 'dni', 'nombre']:
                     if col in df_guardar.columns:
                         df_guardar[col] = df_guardar[col].fillna('')
 
-                # También asegurar que torre y departamento sean números enteros (sin decimales)
                 df_guardar['torre'] = df_guardar['torre'].astype('Int64')
                 df_guardar['departamento'] = df_guardar['departamento'].astype('Int64')
 
-                df_otros = df_seleccionado  # Para usar después si se necesita
+                df_otros = df_seleccionado
 
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
 
         if df_otros is not None:
-            # Verificar si ya existe una hoja con ese nombre
             nombre_hoja = f"Otros {mes_otros} {anio_otros}"
             spreadsheet = gsheets.get_spreadsheet()
             try:
@@ -850,19 +832,21 @@ with tab4:
                 st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
             else:
                 if st.button("Guardar en Google Sheets (Otros)", type="primary", key="guardar_otros"):
-                    with st.spinner("Guardando..."):
-                        try:
-                            nombre_hoja = gsheets.guardar_otros(
-                                df_guardar, mes_otros, int(anio_otros)
-                            )
-                            st.success(f"Guardado en hoja: **{nombre_hoja}**")
-                        except Exception as e:
-                            st.error(f"Error al guardar: {str(e)}")
+                    if gsheets.existe_solapamiento_fechas("Otros", fecha_emision, fecha_vencimiento):
+                        st.error("❌ Ya existe una programación de Otros con un rango de fechas que se solapa con este. No se puede guardar.")
+                    else:
+                        with st.spinner("Guardando..."):
+                            try:
+                                nombre_hoja = gsheets.guardar_otros(
+                                    df_guardar, mes_otros, int(anio_otros)
+                                )
+                                gsheets.registrar_fecha_programacion("Otros", nombre_hoja, fecha_emision, fecha_vencimiento)
+                                st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                            except Exception as e:
+                                st.error(f"Error al guardar: {str(e)}")
 
-    # ---------- SUBTAB 2: VISUALIZAR OTROS ----------
     with subtab2:
         st.subheader("Otros Guardados")
-
         try:
             hojas_otros = gsheets.listar_hojas_otros()
         except Exception as e:
@@ -874,7 +858,6 @@ with tab4:
             df_guardado = gsheets.leer_hoja_otros(hoja_seleccionada)
 
             if not df_guardado.empty:
-                # Cargar propietarios para obtener nombre y DNI si no estaban en el archivo original
                 prop = gsheets.leer_propietarios()
                 if not prop.empty and 'nombre' not in df_guardado.columns:
                     col_torre_prop = None
@@ -894,12 +877,10 @@ with tab4:
                     else:
                         st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios. No se mostrarán nombres ni DNI.")
                 elif 'nombre' in df_guardado.columns:
-                    # Ya tiene los datos, no hacemos nada
                     pass
                 else:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
 
-                # Formatear números
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -912,7 +893,6 @@ with tab4:
                     except (ValueError, TypeError):
                         return str(valor)
 
-                # Identificar las columnas de montos (conceptos)
                 conceptos_viz = {
                     'CUOTA_EXTRAORDINARIAS': 'CUOTA EXTRAORDINARIA',
                     'ALQUILER_PARRILLA': 'ALQUILER PARRILLA',
@@ -921,7 +901,6 @@ with tab4:
                     'ALQUILER_SILLAS': 'ALQUILER DE SILLAS'
                 }
 
-                # Renombrar columnas para visualización
                 mapeo = {
                     'torre': 'TORRE',
                     'departamento': 'N°DPTO',
@@ -929,30 +908,24 @@ with tab4:
                     'dni': 'DNI',
                     'nombre': 'APELLIDOS Y NOMBRES'
                 }
-                # Añadir los conceptos al mapeo
                 for key, label in conceptos_viz.items():
                     if key in df_guardado.columns:
                         mapeo[key] = label
 
-                # Aplicar renombrado
                 df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
 
-                # Formatear columnas numéricas
                 for col in df_viz.columns:
                     if col in conceptos_viz.values():
                         df_viz[col] = df_viz[col].apply(formatear_numero)
 
-                # Asegurar que torre y departamento sean strings sin decimales
                 for col in ['TORRE', 'N°DPTO']:
                     if col in df_viz.columns:
                         df_viz[col] = df_viz[col].apply(formatear_numero)
 
-                # Orden de columnas (priorizar torre, dpto, código, nombre, luego conceptos)
                 columnas_orden = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES'] + list(conceptos_viz.values())
                 columnas_existentes = [col for col in columnas_orden if col in df_viz.columns]
 
-                # Calcular totales por concepto
                 def extraer_numero(val):
                     if pd.isna(val) or val == '':
                         return 0.0
@@ -963,9 +936,7 @@ with tab4:
                     except:
                         return 0.0
 
-                # Mostrar totales en métricas (en filas de columnas)
                 st.subheader("📊 Resumen de Ingresos")
-                # Dividir en grupos de hasta 3 métricas por fila
                 conceptos_list = [label for label in conceptos_viz.values() if label in df_viz.columns]
                 for i in range(0, len(conceptos_list), 3):
                     cols = st.columns(3)
@@ -976,13 +947,11 @@ with tab4:
 
                 st.markdown("---")
 
-                # Índice empezando en 1
                 df_viz = df_viz[columnas_existentes].reset_index(drop=True)
                 df_viz.index = df_viz.index + 1
 
                 st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
 
-                # Botón de descarga
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
