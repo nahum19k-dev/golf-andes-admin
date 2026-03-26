@@ -3,6 +3,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 import numpy as np
+from datetime import datetime  # <-- AÑADIDO
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -594,3 +595,63 @@ def leer_hoja_otros(nombre_hoja):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     return df
+
+# ====================== NUEVAS FUNCIONES DE CONTROL DE FECHAS ======================
+def registrar_fecha_programacion(tipo: str, nombre_hoja: str, fecha_emision, fecha_vencimiento):
+    """
+    Registra en la hoja 'Control_Fechas' el rango de fechas de una programación.
+    """
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet("Control_Fechas")
+    except gspread.exceptions.WorksheetNotFound:
+        # Si no existe, la creamos
+        worksheet = spreadsheet.add_worksheet(title="Control_Fechas", rows="1000", cols="10")
+        worksheet.update([["TIPO", "NOMBRE_HOJA", "FECHA_EMISION", "FECHA_VENCIMIENTO"]])
+    
+    # Buscar si ya existe un registro para esa hoja (para actualizar)
+    registros = worksheet.get_all_values()
+    if len(registros) > 1:
+        for i, row in enumerate(registros[1:], start=2):
+            if len(row) >= 2 and row[1] == nombre_hoja:
+                # Actualizar
+                worksheet.update(f"C{i}", [[fecha_emision.strftime('%Y-%m-%d')]])
+                worksheet.update(f"D{i}", [[fecha_vencimiento.strftime('%Y-%m-%d')]])
+                return
+    # Si no existe, agregar nueva fila
+    worksheet.append_row([
+        tipo,
+        nombre_hoja,
+        fecha_emision.strftime('%Y-%m-%d'),
+        fecha_vencimiento.strftime('%Y-%m-%d')
+    ])
+
+def existe_solapamiento_fechas(tipo: str, nueva_emision, nueva_vencimiento) -> bool:
+    """
+    Retorna True si ya existe una programación del mismo tipo con un rango que solapa.
+    """
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet("Control_Fechas")
+    except gspread.exceptions.WorksheetNotFound:
+        return False  # No hay registros, no hay solapamiento
+    
+    registros = worksheet.get_all_values()
+    if len(registros) <= 1:
+        return False
+    
+    # Buscar registros del mismo tipo
+    for row in registros[1:]:
+        if len(row) < 4:
+            continue
+        if row[0] != tipo:
+            continue
+        try:
+            emision_existente = datetime.strptime(row[2], '%Y-%m-%d').date()
+            venc_existente = datetime.strptime(row[3], '%Y-%m-%d').date()
+        except:
+            continue
+        # Verificar solapamiento: (nueva_emision <= venc_existente and nueva_vencimiento >= emision_existente)
+        if nueva_emision <= venc_existente and nueva_vencimiento >= emision_existente:
+            return True
+    return False
