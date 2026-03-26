@@ -673,7 +673,7 @@ with tab3:
         else:
             st.info("No hay hojas de amortización guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
 
-# ====================== TAB 4: OTROS ======================
+# ====================== TAB 4: OTROS (INGRESOS EXTRAORDINARIOS) ======================
 with tab4:
     # Sub‑pestañas dentro de Otros
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Otros"])
@@ -696,10 +696,14 @@ with tab4:
             El archivo debe contener las siguientes columnas (en cualquier orden):
             - TORRE
             - N°DPTO
-            - CODIGO
-            - DNI
-            - APELLIDOS Y NOMBRES
-            - INGRESOS EXTRAORDINARIOS
+            - CODIGO (opcional)
+            - DNI (opcional)
+            - APELLIDOS Y NOMBRES (opcional)
+            - CUOTA EXTRAORDINARIAS
+            - ALQUILER PARRILLA
+            - GARANTIA
+            - SALA ZOOM
+            - ALQUILER DE SILLAS
 
             La primera fila debe ser los encabezados.
             """)
@@ -722,7 +726,16 @@ with tab4:
                 col_codigo = None
                 col_dni = None
                 col_nombre = None
-                col_monto = None
+
+                # Columnas de montos (conceptos)
+                conceptos = {
+                    'CUOTA_EXTRAORDINARIAS': ['extraordinarias', 'cuota extraordinaria', 'extra'],
+                    'ALQUILER_PARRILLA': ['parrilla', 'alquiler parrilla'],
+                    'GARANTIA': ['garantia', 'garantía'],
+                    'SALA_ZOOM': ['sala zoom', 'zoom'],
+                    'ALQUILER_SILLAS': ['sillas', 'alquiler de sillas']
+                }
+                columnas_montos = {k: None for k in conceptos.keys()}
 
                 for col in df.columns:
                     col_low = col.lower()
@@ -736,19 +749,34 @@ with tab4:
                         col_dni = col
                     elif 'apellidos' in col_low or 'nombre' in col_low:
                         col_nombre = col
-                    elif 'extraordinarios' in col_low or 'ingresos' in col_low or 'monto' in col_low:
-                        col_monto = col
+                    else:
+                        # Buscar entre los conceptos
+                        for key, keywords in conceptos.items():
+                            if any(kw in col_low for kw in keywords):
+                                columnas_montos[key] = col
+                                break
 
-                if col_torre is None or col_dpto is None or col_monto is None:
-                    st.error("No se encontraron las columnas necesarias (TORRE, N°DPTO, INGRESOS EXTRAORDINARIOS). Verifica el archivo.")
+                if col_torre is None or col_dpto is None:
+                    st.error("No se encontraron las columnas necesarias: TORRE y N°DPTO. Verifica el archivo.")
                     st.stop()
+
+                # Si no se encontró ninguna columna de monto, mostrar advertencia
+                if all(v is None for v in columnas_montos.values()):
+                    st.warning("No se detectaron columnas de ingresos extraordinarios. Se creará un registro vacío.")
 
                 # Seleccionar y renombrar columnas
                 df_seleccionado = pd.DataFrame()
                 df_seleccionado['torre'] = df[col_torre]
                 df_seleccionado['departamento'] = df[col_dpto]
-                df_seleccionado['IngresosExtraordinarios'] = df[col_monto]
 
+                # Añadir columnas de montos
+                for key, col_monto in columnas_montos.items():
+                    if col_monto is not None:
+                        df_seleccionado[key] = df[col_monto]
+                    else:
+                        df_seleccionado[key] = 0  # si no existe la columna, asignar 0
+
+                # Añadir columnas opcionales
                 if col_codigo:
                     df_seleccionado['codigo'] = df[col_codigo]
                 if col_dni:
@@ -759,20 +787,29 @@ with tab4:
                 # Convertir columnas numéricas
                 df_seleccionado['torre'] = pd.to_numeric(df_seleccionado['torre'], errors='coerce')
                 df_seleccionado['departamento'] = pd.to_numeric(df_seleccionado['departamento'], errors='coerce')
-                df_seleccionado['IngresosExtraordinarios'] = pd.to_numeric(df_seleccionado['IngresosExtraordinarios'], errors='coerce')
+                for key in conceptos.keys():
+                    df_seleccionado[key] = pd.to_numeric(df_seleccionado[key], errors='coerce')
 
                 # Eliminar filas sin torre o departamento
                 df_seleccionado = df_seleccionado.dropna(subset=['torre', 'departamento'])
 
                 # Rellenar NaN con 0
-                df_seleccionado['IngresosExtraordinarios'] = df_seleccionado['IngresosExtraordinarios'].fillna(0)
+                for key in conceptos.keys():
+                    df_seleccionado[key] = df_seleccionado[key].fillna(0)
 
                 st.success(f"Archivo leído: {len(df_seleccionado)} filas")
                 st.write("Vista previa (primeras 8 filas):")
                 st.dataframe(df_seleccionado.head(8))
 
-                # Para guardar, usaremos solo torre, departamento, IngresosExtraordinarios
-                df_guardar = df_seleccionado[['torre', 'departamento', 'IngresosExtraordinarios']].copy()
+                # Para guardar, usaremos torre, departamento y todas las columnas de montos
+                columnas_guardar = ['torre', 'departamento'] + list(conceptos.keys())
+                if 'codigo' in df_seleccionado.columns:
+                    columnas_guardar.append('codigo')
+                if 'dni' in df_seleccionado.columns:
+                    columnas_guardar.append('dni')
+                if 'nombre' in df_seleccionado.columns:
+                    columnas_guardar.append('nombre')
+                df_guardar = df_seleccionado[columnas_guardar].copy()
 
                 df_otros = df_seleccionado  # Para usar después
 
@@ -818,9 +855,9 @@ with tab4:
             df_guardado = gsheets.leer_hoja_otros(hoja_seleccionada)
 
             if not df_guardado.empty:
-                # Cargar propietarios para obtener nombre y DNI
+                # Cargar propietarios para obtener nombre y DNI si no estaban en el archivo original
                 prop = gsheets.leer_propietarios()
-                if not prop.empty:
+                if not prop.empty and 'nombre' not in df_guardado.columns:
                     col_torre_prop = None
                     col_dpto_prop = None
                     for col in prop.columns:
@@ -828,19 +865,20 @@ with tab4:
                             col_torre_prop = col
                         elif col.lower() in ['departamento', 'dpto', 'n°dpto']:
                             col_dpto_prop = col
-                    if col_torre_prop is None or col_dpto_prop is None:
-                        st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios. No se mostrarán nombres ni DNI.")
-                        df_mostrar = df_guardado.copy()
-                    else:
+                    if col_torre_prop is not None and col_dpto_prop is not None:
                         prop_sub = prop[[col_torre_prop, col_dpto_prop, 'nombre', 'dni']].copy()
                         prop_sub.rename(columns={col_torre_prop: 'torre', col_dpto_prop: 'departamento'}, inplace=True)
                         prop_sub['torre'] = pd.to_numeric(prop_sub['torre'], errors='coerce')
                         prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
                         prop_sub = prop_sub.drop_duplicates(subset=['torre', 'departamento'], keep='first')
-                        df_mostrar = df_guardado.merge(prop_sub, on=['torre', 'departamento'], how='left')
+                        df_guardado = df_guardado.merge(prop_sub, on=['torre', 'departamento'], how='left')
+                    else:
+                        st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios. No se mostrarán nombres ni DNI.")
+                elif 'nombre' in df_guardado.columns:
+                    # Ya tiene los datos, no hacemos nada
+                    pass
                 else:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
-                    df_mostrar = df_guardado.copy()
 
                 # Formatear números
                 def formatear_numero(valor):
@@ -855,13 +893,14 @@ with tab4:
                     except (ValueError, TypeError):
                         return str(valor)
 
-                if 'IngresosExtraordinarios' in df_mostrar.columns:
-                    df_mostrar['IngresosExtraordinarios'] = df_mostrar['IngresosExtraordinarios'].apply(formatear_numero)
-
-                # Asegurar que torre y departamento sean strings sin decimales
-                for col in ['torre', 'departamento']:
-                    if col in df_mostrar.columns:
-                        df_mostrar[col] = df_mostrar[col].apply(formatear_numero)
+                # Identificar las columnas de montos (conceptos)
+                conceptos_viz = {
+                    'CUOTA_EXTRAORDINARIAS': 'CUOTA EXTRAORDINARIA',
+                    'ALQUILER_PARRILLA': 'ALQUILER PARRILLA',
+                    'GARANTIA': 'GARANTÍA',
+                    'SALA_ZOOM': 'SALA ZOOM',
+                    'ALQUILER_SILLAS': 'ALQUILER DE SILLAS'
+                }
 
                 # Renombrar columnas para visualización
                 mapeo = {
@@ -869,17 +908,32 @@ with tab4:
                     'departamento': 'N°DPTO',
                     'codigo': 'CÓDIGO',
                     'dni': 'DNI',
-                    'nombre': 'APELLIDOS Y NOMBRES',
-                    'IngresosExtraordinarios': 'INGRESOS EXTRAORDINARIOS'
+                    'nombre': 'APELLIDOS Y NOMBRES'
                 }
-                df_viz = df_mostrar.rename(columns={col: mapeo[col] for col in df_mostrar.columns if col in mapeo})
+                # Añadir los conceptos al mapeo
+                for key, label in conceptos_viz.items():
+                    if key in df_guardado.columns:
+                        mapeo[key] = label
+
+                # Aplicar renombrado
+                df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
 
-                # Orden de columnas
-                columnas_final = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES', 'INGRESOS EXTRAORDINARIOS']
-                columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
+                # Formatear columnas numéricas
+                for col in df_viz.columns:
+                    if col in conceptos_viz.values():
+                        df_viz[col] = df_viz[col].apply(formatear_numero)
 
-                # Calcular total
+                # Asegurar que torre y departamento sean strings sin decimales
+                for col in ['TORRE', 'N°DPTO']:
+                    if col in df_viz.columns:
+                        df_viz[col] = df_viz[col].apply(formatear_numero)
+
+                # Orden de columnas (priorizar torre, dpto, código, nombre, luego conceptos)
+                columnas_orden = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES'] + list(conceptos_viz.values())
+                columnas_existentes = [col for col in columnas_orden if col in df_viz.columns]
+
+                # Calcular totales por concepto
                 def extraer_numero(val):
                     if pd.isna(val) or val == '':
                         return 0.0
@@ -890,15 +944,21 @@ with tab4:
                     except:
                         return 0.0
 
-                total_ingresos = df_viz['INGRESOS EXTRAORDINARIOS'].apply(extraer_numero).sum()
-                total_formateado = f"S/ {total_ingresos:,.2f}"
+                # Mostrar totales en métricas (en filas de columnas)
+                st.subheader("📊 Resumen de Ingresos")
+                # Dividir en grupos de hasta 3 métricas por fila
+                conceptos_list = [label for label in conceptos_viz.values() if label in df_viz.columns]
+                for i in range(0, len(conceptos_list), 3):
+                    cols = st.columns(3)
+                    for j, concepto in enumerate(conceptos_list[i:i+3]):
+                        total = df_viz[concepto].apply(extraer_numero).sum()
+                        with cols[j]:
+                            st.metric(label=concepto, value=f"S/ {total:,.2f}")
 
-                # Mostrar indicador
-                st.metric("💰 Total de Ingresos Extraordinarios", total_formateado)
                 st.markdown("---")
 
                 # Índice empezando en 1
-                df_viz = df_viz.reset_index(drop=True)
+                df_viz = df_viz[columnas_existentes].reset_index(drop=True)
                 df_viz.index = df_viz.index + 1
 
                 st.dataframe(df_viz.fillna(""), use_container_width=True, height=600)
