@@ -16,6 +16,11 @@ if 'mes_actual' not in st.session_state:
     st.session_state.mes_actual = None
 if 'anio_actual' not in st.session_state:
     st.session_state.anio_actual = None
+# <-- MODIFICACIÓN: guardar fechas del período
+if 'fecha_emision' not in st.session_state:
+    st.session_state.fecha_emision = None
+if 'fecha_vencimiento' not in st.session_state:
+    st.session_state.fecha_vencimiento = None
 
 # ========== CREAR PESTAÑAS ==========
 tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
@@ -243,6 +248,11 @@ with tab1:
                 st.session_state.mes_actual = mes
                 st.session_state.anio_actual = anio
 
+                # <-- MODIFICACIÓN: OBTENER Y GUARDAR LAS FECHAS DEL PERÍODO (Mantenimiento como referencia)
+                fecha_emi, fecha_ven = gsheets.obtener_fechas_programacion("Mantenimiento", mes, anio)
+                st.session_state.fecha_emision = fecha_emi
+                st.session_state.fecha_vencimiento = fecha_ven
+
                 # ---------- APLICAR FILTRO POR CÓDIGO ----------
                 if codigo_filtro.strip():
                     mask = df_final['codigo'].astype(str).str.contains(codigo_filtro.strip(), case=False, na=False)
@@ -255,7 +265,13 @@ with tab1:
                         df_final['#'] = df_final.index
                 # -----------------------------------------
 
-                # ========== GENERAR TABLA HTML CON CABECERAS AGRUPADAS (CORREGIDA) ==========
+                # <-- MODIFICACIÓN: MOSTRAR RANGO DE FECHAS SI EXISTE
+                if fecha_emi and fecha_ven:
+                    st.info(f"📅 **Período de programación:** {fecha_emi.strftime('%d/%m/%Y')} al {fecha_ven.strftime('%d/%m/%Y')}")
+                else:
+                    st.warning("⚠️ No se encontró información de fechas para este período en la hoja de control.")
+
+                # ========== GENERAR TABLA HTML CON CABECERAS AGRUPADAS ==========
                 col_names = list(df_final.columns)
 
                 # Grupos de columnas
@@ -297,20 +313,20 @@ with tab1:
                     html += '    </tr>\n'
 
                 # Segunda fila: nombres de columnas
-                html += '    <tr>\n'
+                html += '     <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '    </tr>\n'
+                html += '     </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 # Filas de datos
                 for _, row in df_final.iterrows():
-                    html += '    <tr>\n'
+                    html += '     <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '    </tr>\n'
+                    html += '     </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -333,6 +349,9 @@ with tab1:
     else:
         if st.session_state.datos_cargados:
             st.info(f"Datos cargados para {st.session_state.mes_actual} {st.session_state.anio_actual}. Puedes visualizar el resumen en la otra pestaña.")
+            # <-- MODIFICACIÓN: mostrar también las fechas si están disponibles
+            if st.session_state.fecha_emision and st.session_state.fecha_vencimiento:
+                st.info(f"📅 Período: {st.session_state.fecha_emision.strftime('%d/%m/%Y')} al {st.session_state.fecha_vencimiento.strftime('%d/%m/%Y')}")
         else:
             st.info("Haz clic en 'Generar Estado de Cuenta' para cargar los datos.")
 
