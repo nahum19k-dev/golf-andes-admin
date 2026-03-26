@@ -246,11 +246,14 @@ with tab2:
         col1, col2 = st.columns(2)
         with col1:
             mes = st.selectbox("Mes", ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
-                                       "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"])
+                                       "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"],
+                               key="mes_medidor")
         with col2:
-            anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
+            anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1,
+                                   key="anio_medidor")
 
-        uploaded_file = st.file_uploader("Sube el archivo Excel de MEDIDORES", type=["xlsx"])
+        uploaded_file = st.file_uploader("Sube el archivo Excel de MEDIDORES", type=["xlsx"],
+                                         key="medidor_file")
 
         if uploaded_file is not None:
             try:
@@ -439,7 +442,8 @@ with tab2:
             hojas_medidor = []
 
         if hojas_medidor:
-            hoja_seleccionada = st.selectbox("Selecciona el período de medidores:", hojas_medidor)
+            hoja_seleccionada = st.selectbox("Selecciona el período de medidores:", hojas_medidor,
+                                             key="select_medidor_hoja")
             df_guardado = gsheets.leer_hoja_medidor(hoja_seleccionada)
 
             if not df_guardado.empty:
