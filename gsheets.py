@@ -552,8 +552,9 @@ def leer_hoja_programacion(nombre_hoja):
     df_out = df_out.dropna(subset=['torre', 'departamento'])
     df_out = df_out.loc[:, ~df_out.columns.duplicated()]
     return df_out
-# ------------------- PROGRAMACION OTROS -------------------
+# ------------------- Otros (Ingresos Extraordinarios) -------------------
 def guardar_otros(df: pd.DataFrame, mes: str, anio: int):
+    """Guarda ingresos extraordinarios con nombre 'Otros {mes} {anio}'"""
     nombre_base = f"Otros {mes} {anio}"
     spreadsheet = get_spreadsheet()
     nombre_hoja = nombre_base
