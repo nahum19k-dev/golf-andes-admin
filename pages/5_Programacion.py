@@ -717,7 +717,7 @@ with tab4:
             try:
                 # Leer archivo asumiendo encabezados en primera fila
                 df = pd.read_excel(uploaded_file_otros, sheet_name=0, header=0)
-                df.columns = df.columns.str.strip().str.replace('\n', ' ')
+                df.columns = df.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
                 df = df.dropna(axis=1, how='all')
                 df = df.dropna(how='all')
 
@@ -748,6 +748,7 @@ with tab4:
                         col_codigo = col
                     elif 'dni' in col_low:
                         col_dni = col
+                    # Detección más flexible para nombres (acepta espacios, guiones, etc.)
                     elif 'apellidos' in col_low or 'nombre' in col_low:
                         col_nombre = col
                     else:
@@ -799,20 +800,24 @@ with tab4:
                     df_seleccionado[key] = df_seleccionado[key].fillna(0)
 
                 st.success(f"Archivo leído: {len(df_seleccionado)} filas")
+
+                # --- REORDENAR COLUMNAS PARA LA VISTA PREVIA Y GUARDADO ---
+                # Definir el orden deseado de columnas
+                columnas_orden_deseado = [
+                    'torre', 'departamento', 'codigo', 'dni', 'nombre',
+                    'CUOTA_EXTRAORDINARIAS', 'ALQUILER_PARRILLA', 'GARANTIA', 'SALA_ZOOM', 'ALQUILER_SILLAS'
+                ]
+                # Seleccionar solo las que existen en df_seleccionado
+                columnas_existentes = [col for col in columnas_orden_deseado if col in df_seleccionado.columns]
+                # Crear una copia ordenada para mostrar
+                df_mostrar = df_seleccionado[columnas_existentes].copy()
                 st.write("Vista previa (primeras 8 filas):")
-                st.dataframe(df_seleccionado.head(8))
+                st.dataframe(df_mostrar.head(8))
 
-                # Para guardar, usaremos torre, departamento y todas las columnas de montos
-                columnas_guardar = ['torre', 'departamento'] + list(conceptos.keys())
-                if 'codigo' in df_seleccionado.columns:
-                    columnas_guardar.append('codigo')
-                if 'dni' in df_seleccionado.columns:
-                    columnas_guardar.append('dni')
-                if 'nombre' in df_seleccionado.columns:
-                    columnas_guardar.append('nombre')
-                df_guardar = df_seleccionado[columnas_guardar].copy()
-
-                df_otros = df_seleccionado  # Para usar después
+                # Para guardar, usaremos las columnas que deben ir a la hoja
+                # (incluyendo todas las que se hayan detectado, en el orden deseado)
+                df_guardar = df_seleccionado[columnas_existentes].copy()
+                df_otros = df_seleccionado  # Para usar después si se necesita
 
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
