@@ -179,6 +179,7 @@ def leer_pagos_mes(mes: str, anio: int):
 
     df_out = df_out.sort_values('fecha')
     return df_out
+
 def leer_hoja_pagos(nombre_hoja):
     spreadsheet = get_spreadsheet()
     worksheet = spreadsheet.worksheet(nombre_hoja)
@@ -189,6 +190,7 @@ def leer_hoja_pagos(nombre_hoja):
     filas = datos[1:]
     df = pd.DataFrame(filas, columns=headers)
     return df
+
 # ------------------- Medidores -------------------
 def guardar_medidor(df: pd.DataFrame, mes: str, anio: int):
     nombre_base = f"Medidor {mes} {anio}"
@@ -552,10 +554,12 @@ def leer_hoja_programacion(nombre_hoja):
     df_out = df_out.dropna(subset=['torre', 'departamento'])
     df_out = df_out.loc[:, ~df_out.columns.duplicated()]
     return df_out
+
 # ------------------- Otros (Ingresos Extraordinarios) -------------------
 def guardar_otros(df, mes, anio):
     nombre_hoja = f"Otros {mes} {anio}"
-    # Eliminar la hoja si existe
+    spreadsheet = get_spreadsheet()          # <-- CORRECCIÓN: obtener el spreadsheet
+    # Eliminar la hoja si ya existe
     try:
         worksheet = spreadsheet.worksheet(nombre_hoja)
         spreadsheet.del_worksheet(worksheet)
