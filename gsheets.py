@@ -558,7 +558,14 @@ def leer_hoja_programacion(nombre_hoja):
 # ------------------- Otros (Ingresos Extraordinarios) -------------------
 def guardar_otros(df, mes, anio):
     nombre_hoja = f"Otros {mes} {anio}"
-    spreadsheet = get_spreadsheet()          # <-- CORRECCIÓN: obtener el spreadsheet
+    spreadsheet = get_spreadsheet()
+    # Limpiar NaN antes de subir
+    df_clean = df.copy()
+    for col in df_clean.columns:
+        if df_clean[col].dtype == 'float64':
+            df_clean[col] = df_clean[col].fillna(0)
+        else:
+            df_clean[col] = df_clean[col].fillna('')
     # Eliminar la hoja si ya existe
     try:
         worksheet = spreadsheet.worksheet(nombre_hoja)
@@ -567,7 +574,7 @@ def guardar_otros(df, mes, anio):
         pass
     # Crear nueva hoja y subir datos
     worksheet = spreadsheet.add_worksheet(title=nombre_hoja, rows="1000", cols="20")
-    worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+    worksheet.update([df_clean.columns.values.tolist()] + df_clean.values.tolist())
     return nombre_hoja
 
 def listar_hojas_otros():
