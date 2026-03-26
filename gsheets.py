@@ -3,7 +3,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 import numpy as np
-from datetime import datetime  # <-- AÑADIDO
+from datetime import datetime
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -608,7 +608,7 @@ def registrar_fecha_programacion(tipo: str, nombre_hoja: str, fecha_emision, fec
         # Si no existe, la creamos
         worksheet = spreadsheet.add_worksheet(title="Control_Fechas", rows="1000", cols="10")
         worksheet.update([["TIPO", "NOMBRE_HOJA", "FECHA_EMISION", "FECHA_VENCIMIENTO"]])
-    
+
     # Buscar si ya existe un registro para esa hoja (para actualizar)
     registros = worksheet.get_all_values()
     if len(registros) > 1:
@@ -635,11 +635,11 @@ def existe_solapamiento_fechas(tipo: str, nueva_emision, nueva_vencimiento) -> b
         worksheet = spreadsheet.worksheet("Control_Fechas")
     except gspread.exceptions.WorksheetNotFound:
         return False  # No hay registros, no hay solapamiento
-    
+
     registros = worksheet.get_all_values()
     if len(registros) <= 1:
         return False
-    
+
     # Buscar registros del mismo tipo
     for row in registros[1:]:
         if len(row) < 4:
@@ -655,3 +655,47 @@ def existe_solapamiento_fechas(tipo: str, nueva_emision, nueva_vencimiento) -> b
         if nueva_emision <= venc_existente and nueva_vencimiento >= emision_existente:
             return True
     return False
+
+def obtener_fechas_programacion(tipo: str, nombre_hoja: str):
+    """
+    Obtiene las fechas de emisión y vencimiento para una programación específica.
+    Retorna (fecha_emision, fecha_vencimiento) como objetos date, o (None, None) si no existe.
+    """
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet("Control_Fechas")
+    except gspread.exceptions.WorksheetNotFound:
+        return None, None
+    registros = worksheet.get_all_values()
+    for row in registros[1:]:
+        if len(row) >= 4 and row[0] == tipo and row[1] == nombre_hoja:
+            try:
+                emision = datetime.strptime(row[2], '%Y-%m-%d').date()
+                vencimiento = datetime.strptime(row[3], '%Y-%m-%d').date()
+                return emision, vencimiento
+            except:
+                return None, None
+    return None, None
+
+def listar_programaciones_con_fechas(tipo: str = None):
+    """
+    Retorna un DataFrame con las columnas: TIPO, NOMBRE_HOJA, FECHA_EMISION, FECHA_VENCIMIENTO.
+    Si se especifica tipo, filtra por ese tipo.
+    """
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet("Control_Fechas")
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
+    registros = worksheet.get_all_values()
+    if len(registros) <= 1:
+        return pd.DataFrame()
+    headers = registros[0]
+    data = registros[1:]
+    df = pd.DataFrame(data, columns=headers)
+    if tipo:
+        df = df[df['TIPO'] == tipo]
+    # Convertir fechas
+    for col in ['FECHA_EMISION', 'FECHA_VENCIMIENTO']:
+        df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
+    return df
