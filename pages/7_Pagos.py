@@ -152,15 +152,34 @@ with tab1:
                     columnas_guardar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'dni', 'mantenimiento', 'amortizacion', 'medidor', 'n_operacion']
                     cols_existentes = [c for c in columnas_guardar if c in df_coinciden.columns]
                     df_guardar = df_coinciden[cols_existentes].copy()
-                    # Convertir fechas a string
+
+                    # --- LIMPIEZA ROBUSTA ANTES DE GUARDAR ---
+                    # 1. Fecha: convertir a string en formato YYYY-MM-DD
                     if 'fecha' in df_guardar.columns:
-                        df_guardar['fecha'] = pd.to_datetime(df_guardar['fecha']).dt.strftime('%Y-%m-%d')
-                    # Asegurar que las columnas numéricas sean números (no strings)
+                        df_guardar['fecha'] = pd.to_datetime(df_guardar['fecha'], errors='coerce')
+                        df_guardar['fecha'] = df_guardar['fecha'].dt.strftime('%Y-%m-%d')
+                        df_guardar['fecha'] = df_guardar['fecha'].fillna('')
+
+                    # 2. Columnas numéricas: asegurar float y reemplazar NaN por 0
                     for col in ['mantenimiento', 'amortizacion', 'medidor']:
                         if col in df_guardar.columns:
                             df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce').fillna(0)
-                    # Limpiar valores nulos
-                    df_guardar = df_guardar.fillna("")
+
+                    # 3. Columnas de texto: convertir a string y reemplazar NaN por ''
+                    for col in ['descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'dni', 'n_operacion']:
+                        if col in df_guardar.columns:
+                            df_guardar[col] = df_guardar[col].astype(str).fillna('')
+
+                    # 4. Asegurar que torre y departamento sean enteros (sin decimales) para evitar .0
+                    for col in ['torre', 'departamento']:
+                        if col in df_guardar.columns:
+                            df_guardar[col] = df_guardar[col].apply(lambda x: int(float(x)) if pd.notna(x) and x != '' else 0)
+
+                    # (Opcional) Mostrar una vista previa del DataFrame a guardar para depuración
+                    st.write("**Vista previa de los datos a guardar (primeras 5 filas):**")
+                    st.dataframe(df_guardar.head(5))
+
+                    # Guardar en Google Sheets
                     nombre_hoja = gsheets.guardar_pagos(
                         df=df_guardar,
                         mes=mes,
@@ -169,9 +188,15 @@ with tab1:
                     st.success(f"Guardado en hoja: **{nombre_hoja}**")
                 except Exception as e:
                     st.error(f"Error al guardar: {str(e)}")
+                    # Mostrar el tipo de error y el contenido de df_guardar para ayudar a depurar
+                    st.error("Detalles del error (para depuración):")
+                    st.write("Columnas en df_guardar:", list(df_guardar.columns))
+                    st.write("Tipos de datos:\n", df_guardar.dtypes)
+                    st.write("Primeras 3 filas:")
+                    st.dataframe(df_guardar.head(3))
 
         except Exception as e:
-            st.error(f"Error al procesar: {str(e)}")
+            st.error(f"Error al procesar el archivo: {str(e)}")
 
 # ====================== TAB 2: VISUALIZAR PAGOS ORDENADOS ======================
 with tab2:
