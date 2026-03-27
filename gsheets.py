@@ -691,3 +691,35 @@ def obtener_fechas_programacion(tipo: str, mes: str, anio: int):
             except:
                 return (None, None)
     return (None, None)
+
+# ====================== NUEVA FUNCIÓN PARA ELIMINAR ======================
+def eliminar_programacion(nombre_hoja: str) -> bool:
+    """
+    Elimina una hoja del spreadsheet y su registro en Control_Fechas.
+    Retorna True si se eliminó correctamente, False si no se encontró la hoja.
+    """
+    spreadsheet = get_spreadsheet()
+    eliminada = False
+
+    # 1. Eliminar la hoja si existe
+    try:
+        worksheet = spreadsheet.worksheet(nombre_hoja)
+        spreadsheet.del_worksheet(worksheet)
+        eliminada = True
+    except gspread.exceptions.WorksheetNotFound:
+        pass
+
+    # 2. Eliminar el registro en Control_Fechas (si existe)
+    try:
+        control = spreadsheet.worksheet("Control_Fechas")
+        registros = control.get_all_values()
+        if len(registros) > 1:
+            # Buscar la fila que tenga nombre_hoja en la columna B (índice 1)
+            for i, row in enumerate(registros[1:], start=2):
+                if len(row) >= 2 and row[1] == nombre_hoja:
+                    control.delete_rows(i)
+                    break
+    except gspread.exceptions.WorksheetNotFound:
+        pass
+
+    return eliminada
