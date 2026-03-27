@@ -27,7 +27,8 @@ with tab1:
     if uploaded_file is not None:
         try:
             # === LECTURA DEL EXCEL ===
-            df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
+            # Leer todas las celdas como string para evitar interpretaciones automáticas
+            df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0, dtype=str)
 
             # Eliminar columna vacía del principio y limpiar nombres
             df_raw = df_raw.iloc[:, 1:]                    # quita la primera columna NaN/Unnamed
@@ -161,20 +162,44 @@ with tab1:
                         if col in df_guardar.columns:
                             df_guardar[col] = df_guardar[col].astype(str).str.strip().fillna('')
 
-                    # 2. FECHA: manejo directo (sin convertir a string previamente)
+                    # 2. FECHA: manejo de números de Excel y strings
                     if 'fecha' in df_guardar.columns:
-                        # Guardar copia de los valores originales para depuración
-                        original_fechas = df_guardar['fecha'].copy()
-                        # Convertir a datetime (Pandas detecta automáticamente formatos ISO con hora)
-                        df_guardar['fecha_dt'] = pd.to_datetime(df_guardar['fecha'], errors='coerce')
+                        # Función auxiliar para convertir cada valor
+                        def convert_fecha(val):
+                            if pd.isna(val):
+                                return None
+                            # Si es número (float/int), es serie de Excel
+                            if isinstance(val, (int, float)):
+                                try:
+                                    # Origen 1899-12-30 (por el error del 29/02/1900)
+                                    return pd.to_datetime(val, unit='D', origin='1899-12-30')
+                                except:
+                                    return None
+                            # Si es string, probar formatos
+                            s = str(val).strip()
+                            # Probar formato dd/mm/yyyy
+                            for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
+                                try:
+                                    return pd.to_datetime(s, format=fmt, errors='raise')
+                                except:
+                                    continue
+                            # Último intento con dayfirst=True
+                            try:
+                                return pd.to_datetime(s, dayfirst=True, errors='coerce')
+                            except:
+                                return None
+
+                        # Aplicar conversión (podría ser lento pero solo una vez por archivo)
+                        df_guardar['fecha_dt'] = df_guardar['fecha'].apply(convert_fecha)
                         invalid_mask = df_guardar['fecha_dt'].isna()
                         if invalid_mask.any():
                             st.warning(f"⚠️ {invalid_mask.sum()} filas tienen fecha inválida y se guardarán sin fecha.")
                             # Mostrar ejemplos de los valores originales que fallaron
-                            invalid_examples = original_fechas[invalid_mask].head(10)
-                            st.write("Ejemplos de valores originales no reconocidos:")
-                            st.dataframe(pd.DataFrame(invalid_examples, columns=['fecha_original']))
-                        # Formatear a string YYYY-MM-DD para guardar en Sheets
+                            problematic = df_guardar[invalid_mask][['fecha']].head(10)
+                            st.write("Ejemplos de valores no reconocidos:")
+                            st.dataframe(problematic)
+
+                        # Formatear a string YYYY-MM-DD
                         df_guardar['fecha'] = df_guardar['fecha_dt'].dt.strftime('%Y-%m-%d').fillna('')
                         df_guardar.drop('fecha_dt', axis=1, inplace=True)
 
