@@ -153,6 +153,8 @@ with tab1:
                     cols_existentes = [c for c in columnas_guardar if c in df_coinciden.columns]
                     df_guardar = df_coinciden[cols_existentes].copy()
 
+                    st.info(f"📊 Se van a guardar {len(df_guardar)} filas coincidentes.")
+
                     # --- LIMPIEZA ROBUSTA ANTES DE GUARDAR ---
                     # 1. Fecha: convertir a string en formato YYYY-MM-DD
                     if 'fecha' in df_guardar.columns:
@@ -166,16 +168,16 @@ with tab1:
                             df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce').fillna(0)
 
                     # 3. Columnas de texto: convertir a string y reemplazar NaN por ''
-                    for col in ['descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'dni', 'n_operacion']:
+                    for col in ['descripcion', 'codigo', 'nombre', 'dni', 'n_operacion']:
                         if col in df_guardar.columns:
                             df_guardar[col] = df_guardar[col].astype(str).fillna('')
 
-                    # 4. Asegurar que torre y departamento sean enteros (sin decimales) para evitar .0
+                    # 4. Asegurar que torre y departamento sean enteros (sin decimales) y no NaN
                     for col in ['torre', 'departamento']:
                         if col in df_guardar.columns:
-                            df_guardar[col] = df_guardar[col].apply(lambda x: int(float(x)) if pd.notna(x) and x != '' else 0)
+                            df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce').fillna(0).astype(int)
 
-                    # (Opcional) Mostrar una vista previa del DataFrame a guardar para depuración
+                    # Mostrar vista previa para depuración
                     st.write("**Vista previa de los datos a guardar (primeras 5 filas):**")
                     st.dataframe(df_guardar.head(5))
 
@@ -185,13 +187,12 @@ with tab1:
                         mes=mes,
                         anio=int(anio)
                     )
-                    st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                    st.success(f"✅ Guardado en hoja: **{nombre_hoja}** (filas: {len(df_guardar)})")
                 except Exception as e:
                     st.error(f"Error al guardar: {str(e)}")
-                    # Mostrar el tipo de error y el contenido de df_guardar para ayudar a depurar
-                    st.error("Detalles del error (para depuración):")
-                    st.write("Columnas en df_guardar:", list(df_guardar.columns))
-                    st.write("Tipos de datos:\n", df_guardar.dtypes)
+                    st.error("Detalles para depuración:")
+                    st.write("Columnas:", list(df_guardar.columns))
+                    st.write("Tipos:\n", df_guardar.dtypes)
                     st.write("Primeras 3 filas:")
                     st.dataframe(df_guardar.head(3))
 
@@ -296,6 +297,16 @@ with tab2:
                 file_name=f"{hoja_seleccionada}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
+            # Botón eliminar
+            st.markdown("---")
+            if st.button("🗑️ Eliminar esta hoja de pagos", type="secondary", key=f"del_pagos_{hoja_seleccionada}"):
+                if gsheets.eliminar_programacion(hoja_seleccionada):
+                    st.success(f"Se eliminó la hoja '{hoja_seleccionada}' correctamente.")
+                    st.cache_resource.clear()
+                    st.rerun()
+                else:
+                    st.error("No se pudo eliminar la hoja (puede que ya no exista).")
         else:
             st.info("La hoja seleccionada está vacía.")
     else:
