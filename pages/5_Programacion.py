@@ -32,7 +32,7 @@ with tab1:
 
     # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
-        col1, col2 = st.columns(2)  # Solo dos columnas (eliminado n_deptos)
+        col1, col2 = st.columns(2)
         with col1:
             mes = st.selectbox(
                 "Mes a programar",
@@ -94,7 +94,6 @@ with tab1:
                     st.error("No se encontraron las columnas necesarias (TORRE, N°DPTO, MANTENIMIENTO). Verifica el archivo.")
                     st.stop()
 
-                # Crear DataFrame con todas las columnas detectadas
                 df_seleccionado = pd.DataFrame()
                 df_seleccionado['torre'] = df[col_torre]
                 df_seleccionado['departamento'] = df[col_dpto]
@@ -107,7 +106,6 @@ with tab1:
                 if col_nombre:
                     df_seleccionado['nombre'] = df[col_nombre]
 
-                # Convertir columnas numéricas
                 df_seleccionado['torre'] = pd.to_numeric(df_seleccionado['torre'], errors='coerce')
                 df_seleccionado['departamento'] = pd.to_numeric(df_seleccionado['departamento'], errors='coerce')
                 df_seleccionado['Mantenimiento'] = pd.to_numeric(df_seleccionado['Mantenimiento'], errors='coerce')
@@ -118,7 +116,6 @@ with tab1:
                 st.write("Vista previa (primeras 8 filas):")
                 st.dataframe(df_seleccionado.head(8))
 
-                # Guardar todas las columnas disponibles
                 columnas_a_guardar = ['torre', 'departamento', 'Mantenimiento']
                 if 'codigo' in df_seleccionado.columns:
                     columnas_a_guardar.insert(2, 'codigo')
@@ -132,7 +129,6 @@ with tab1:
                 st.error(f"Error al leer el archivo: {e}")
 
         if df is not None:
-            # Validar que el mes seleccionado coincida con el mes de vencimiento
             valido, mes_real = validar_mes_vencimiento(mes, fecha_vencimiento)
             if not valido:
                 st.error(f"❌ El mes seleccionado ({mes}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
@@ -143,7 +139,6 @@ with tab1:
                     st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
                 else:
                     if st.button("Guardar en Google Sheets", type="primary", key="guardar_det_cuotas"):
-                        # Validar solapamiento de fechas
                         if gsheets.existe_solapamiento_fechas("Mantenimiento", fecha_emision, fecha_vencimiento):
                             st.error("❌ Ya existe una programación de Mantenimiento con un rango de fechas que se solapa con este. No se puede guardar.")
                         else:
@@ -175,9 +170,8 @@ with tab1:
                 df_guardado = df_guardado.drop_duplicates(subset=['torre', 'departamento'], keep='first')
                 prop = gsheets.leer_propietarios()
 
-                # ========== PREPARAR TABLA DE PROPIETARIOS CON COLUMNAS ESTÁNDAR ==========
+                # Preparar tabla de propietarios
                 if not prop.empty:
-                    # Detectar columnas de torre y departamento
                     col_torre_prop = None
                     col_dpto_prop = None
                     for col in prop.columns:
@@ -186,9 +180,7 @@ with tab1:
                         if col.lower() in ['departamento', 'dpto', 'n°dpto']:
                             col_dpto_prop = col
                     if col_torre_prop is not None and col_dpto_prop is not None:
-                        # Incluir también código, dni, nombre si existen
                         columnas_seleccion = [col_torre_prop, col_dpto_prop]
-                        # Detectar código
                         col_codigo_prop = None
                         for col in prop.columns:
                             if col.lower() == 'codigo':
@@ -196,7 +188,6 @@ with tab1:
                                 break
                         if col_codigo_prop:
                             columnas_seleccion.append(col_codigo_prop)
-                        # Detectar dni
                         col_dni_prop = None
                         for col in prop.columns:
                             if col.lower() == 'dni':
@@ -204,7 +195,6 @@ with tab1:
                                 break
                         if col_dni_prop:
                             columnas_seleccion.append(col_dni_prop)
-                        # Detectar nombre
                         col_nombre_prop = None
                         for col in prop.columns:
                             if col.lower() in ['nombre', 'apellidos y nombres']:
@@ -214,7 +204,6 @@ with tab1:
                             columnas_seleccion.append(col_nombre_prop)
 
                         prop_sub = prop[columnas_seleccion].copy()
-                        # Renombrar columnas a nombres estándar
                         rename_map = {}
                         if col_torre_prop:
                             rename_map[col_torre_prop] = 'torre'
@@ -231,16 +220,15 @@ with tab1:
                         prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
                         prop_sub = prop_sub.drop_duplicates(subset=['torre', 'departamento'], keep='first')
                     else:
-                        st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios.")
                         prop_sub = None
+                        st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios.")
                 else:
                     prop_sub = None
                     st.warning("No se pudo cargar la lista de propietarios.")
 
-                # ========== COMPLETAR DATOS FALTANTES ==========
+                # Completar datos faltantes
                 df_mostrar = df_guardado.copy()
                 if prop_sub is not None:
-                    # Completar código, dni, nombre solo si no existen en df_guardado
                     columnas_guardado = df_guardado.columns.tolist()
                     if 'codigo' not in columnas_guardado and 'codigo' in prop_sub.columns:
                         df_mostrar = df_mostrar.merge(prop_sub[['torre', 'departamento', 'codigo']],
@@ -254,7 +242,7 @@ with tab1:
                 else:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
 
-                # ========== FORMATEAR NÚMEROS ==========
+                # Formatear números
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -273,7 +261,6 @@ with tab1:
                     if col in df_mostrar.columns:
                         df_mostrar[col] = df_mostrar[col].apply(formatear_numero)
 
-                # ========== RENOMBRAR PARA VISUALIZACIÓN ==========
                 mapeo = {
                     'torre': 'TORRE',
                     'departamento': 'N°DPTO',
@@ -285,12 +272,10 @@ with tab1:
                 df_viz = df_mostrar.rename(columns={col: mapeo[col] for col in df_mostrar.columns if col in mapeo})
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
 
-                # Orden de columnas deseado
                 columnas_final = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'NOMBRES Y APELLIDOS', 'MANTENIMIENTO (S/)']
                 columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
                 df_viz = df_viz[columnas_existentes]
 
-                # ========== TOTAL MANTENIMIENTO ==========
                 def extraer_numero(val):
                     if pd.isna(val) or val == '':
                         return 0.0
@@ -323,6 +308,16 @@ with tab1:
                     file_name=f"{hoja_seleccionada}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+                # Botón eliminar
+                st.markdown("---")
+                if st.button("🗑️ Eliminar esta programación", type="secondary", key=f"del_{hoja_seleccionada}"):
+                    if gsheets.eliminar_programacion(hoja_seleccionada):
+                        st.success(f"Se eliminó la hoja '{hoja_seleccionada}' correctamente.")
+                        st.cache_resource.clear()
+                        st.rerun()
+                    else:
+                        st.error("No se pudo eliminar la hoja (puede que ya no exista).")
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
@@ -330,10 +325,8 @@ with tab1:
 
 # ====================== TAB 2: MEDIDORES ======================
 with tab2:
-    # Sub‑pestañas dentro de Medidores
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Medidores"])
 
-    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
         col1, col2 = st.columns(2)
         with col1:
@@ -344,7 +337,6 @@ with tab2:
             anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1,
                                    key="anio_medidor")
 
-        # Fechas
         mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes) + 1
         fecha_emision_def = datetime(anio, mes_num, 23)
         fecha_venc_def = fecha_emision_def + timedelta(days=15)
@@ -361,7 +353,6 @@ with tab2:
 
         if uploaded_file is not None:
             try:
-                # Leer archivo (misma lógica de antes)
                 df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
                 df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
@@ -398,7 +389,6 @@ with tab2:
                 if col_monto:
                     df['monto'] = df_raw[col_monto]
 
-                # Filtrado robusto
                 if 'codigo_raw' in df.columns:
                     df['codigo_raw'] = df['codigo_raw'].str.split('.').str[0]
                     df = df[~df['codigo_raw'].str.contains('TOTAL', case=False, na=False)]
@@ -498,7 +488,6 @@ with tab2:
                     cols_no = ['codigo_5d', 'torre', 'departamento', 'medidor_instalado', 'n_medidor', 'monto']
                     st.dataframe(df_no_coinciden[cols_no].fillna(""), use_container_width=True, height=300)
 
-                # Validar mes de vencimiento
                 valido, mes_real = validar_mes_vencimiento(mes, fecha_vencimiento)
                 if not valido:
                     st.error(f"❌ El mes seleccionado ({mes}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
@@ -522,7 +511,6 @@ with tab2:
             except Exception as e:
                 st.error(f"Error al procesar: {str(e)}")
 
-    # ---------- SUBTAB 2: VISUALIZAR MEDIDORES ----------
     with subtab2:
         st.subheader("📊 Visualizar Medidores Guardados")
         try:
@@ -597,6 +585,16 @@ with tab2:
                     file_name=f"{hoja_seleccionada}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+                # Botón eliminar
+                st.markdown("---")
+                if st.button("🗑️ Eliminar esta programación", type="secondary", key=f"del_med_{hoja_seleccionada}"):
+                    if gsheets.eliminar_programacion(hoja_seleccionada):
+                        st.success(f"Se eliminó la hoja '{hoja_seleccionada}' correctamente.")
+                        st.cache_resource.clear()
+                        st.rerun()
+                    else:
+                        st.error("No se pudo eliminar la hoja.")
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
@@ -618,7 +616,6 @@ with tab3:
         with col2:
             anio_amort = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1, key="anio_amort")
 
-        # Fechas
         mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes_amort) + 1
         fecha_emision_def = datetime(anio_amort, mes_num, 23)
         fecha_venc_def = fecha_emision_def + timedelta(days=15)
@@ -683,7 +680,6 @@ with tab3:
                 st.error(f"Error al leer el archivo: {str(e)}")
 
         if df_amort is not None and not df_amort.empty:
-            # Validar mes de vencimiento
             valido, mes_real = validar_mes_vencimiento(mes_amort, fecha_vencimiento)
             if not valido:
                 st.error(f"❌ El mes seleccionado ({mes_amort}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
@@ -765,6 +761,16 @@ with tab3:
                     file_name=f"{hoja_seleccionada}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+                # Botón eliminar
+                st.markdown("---")
+                if st.button("🗑️ Eliminar esta programación", type="secondary", key=f"del_amort_{hoja_seleccionada}"):
+                    if gsheets.eliminar_programacion(hoja_seleccionada):
+                        st.success(f"Se eliminó la hoja '{hoja_seleccionada}' correctamente.")
+                        st.cache_resource.clear()
+                        st.rerun()
+                    else:
+                        st.error("No se pudo eliminar la hoja.")
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
@@ -786,7 +792,6 @@ with tab4:
         with col2:
             anio_otros = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1, key="anio_otros")
 
-        # Fechas
         mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes_otros) + 1
         fecha_emision_def = datetime(anio_otros, mes_num, 23)
         fecha_venc_def = fecha_emision_def + timedelta(days=15)
@@ -922,7 +927,6 @@ with tab4:
                 st.error(f"Error al leer el archivo: {e}")
 
         if df_otros is not None:
-            # Validar mes de vencimiento
             valido, mes_real = validar_mes_vencimiento(mes_otros, fecha_vencimiento)
             if not valido:
                 st.error(f"❌ El mes seleccionado ({mes_otros}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
@@ -968,7 +972,6 @@ with tab4:
             if not df_guardado.empty:
                 prop = gsheets.leer_propietarios()
                 if not prop.empty and 'nombre' not in df_guardado.columns:
-                    # Preparar propietarios con columnas estándar (similar a lo hecho en Mantenimiento)
                     col_torre_prop = None
                     col_dpto_prop = None
                     for col in prop.columns:
@@ -1096,6 +1099,16 @@ with tab4:
                     file_name=f"{hoja_seleccionada}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+                # Botón eliminar
+                st.markdown("---")
+                if st.button("🗑️ Eliminar esta programación", type="secondary", key=f"del_otros_{hoja_seleccionada}"):
+                    if gsheets.eliminar_programacion(hoja_seleccionada):
+                        st.success(f"Se eliminó la hoja '{hoja_seleccionada}' correctamente.")
+                        st.cache_resource.clear()
+                        st.rerun()
+                    else:
+                        st.error("No se pudo eliminar la hoja.")
             else:
                 st.info("La hoja seleccionada está vacía.")
         else:
