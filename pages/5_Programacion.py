@@ -9,6 +9,19 @@ st.set_page_config(page_title="Programación", page_icon="📅", layout="wide")
 
 st.title("📅 Programación Mensual - Subir desde Excel")
 
+# ====================== FUNCIÓN AUXILIAR ======================
+def validar_mes_vencimiento(mes_seleccionado: str, fecha_vencimiento):
+    """
+    Verifica que el mes de la fecha de vencimiento coincida con el mes seleccionado.
+    Retorna (es_valido, mes_real)
+    """
+    meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+             "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
+    mes_real = meses[fecha_vencimiento.month - 1]
+    if mes_seleccionado != mes_real:
+        return False, mes_real
+    return True, mes_real
+
 # Crear pestañas principales
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Programación Mantenimiento", "💧 Medidores", "💰 Amortización", "📌 Otros"])
 
@@ -17,7 +30,7 @@ with tab1:
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Programación"])
 
     with subtab1:
-        col1, col2 = st.columns(2)  # Eliminada la tercera columna (n_deptos)
+        col1, col2 = st.columns(2)  # Solo dos columnas (eliminado n_deptos)
         with col1:
             mes = st.selectbox(
                 "Mes a programar",
@@ -107,25 +120,30 @@ with tab1:
                 st.error(f"Error al leer el archivo: {e}")
 
         if df is not None:
-            periodo_key = f"{mes.upper()}_{int(anio)}"
-            if gsheets.existe_programacion(periodo_key):
-                st.error(f"⚠️ Ya existe una programación para {mes} {anio}")
-                st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
+            # Validar que el mes seleccionado coincida con el mes de vencimiento
+            valido, mes_real = validar_mes_vencimiento(mes, fecha_vencimiento)
+            if not valido:
+                st.error(f"❌ El mes seleccionado ({mes}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
             else:
-                if st.button("Guardar en Google Sheets", type="primary", key="guardar_det_cuotas"):
-                    # Validar solapamiento de fechas
-                    if gsheets.existe_solapamiento_fechas("Mantenimiento", fecha_emision, fecha_vencimiento):
-                        st.error("❌ Ya existe una programación de Mantenimiento con un rango de fechas que se solapa con este. No se puede guardar.")
-                    else:
-                        with st.spinner("Guardando..."):
-                            try:
-                                nombre_hoja = gsheets.crear_y_guardar_programacion(
-                                    df_guardar, periodo_key, mes, int(anio)
-                                )
-                                gsheets.registrar_fecha_programacion("Mantenimiento", nombre_hoja, fecha_emision, fecha_vencimiento)
-                                st.success(f"Guardado en hoja: **{nombre_hoja}**")
-                            except Exception as e:
-                                st.error(f"Error al guardar: {e}")
+                periodo_key = f"{mes_real.upper()}_{int(fecha_vencimiento.year)}"
+                if gsheets.existe_programacion(periodo_key):
+                    st.error(f"⚠️ Ya existe una programación para {mes_real} {fecha_vencimiento.year}")
+                    st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
+                else:
+                    if st.button("Guardar en Google Sheets", type="primary", key="guardar_det_cuotas"):
+                        # Validar solapamiento de fechas
+                        if gsheets.existe_solapamiento_fechas("Mantenimiento", fecha_emision, fecha_vencimiento):
+                            st.error("❌ Ya existe una programación de Mantenimiento con un rango de fechas que se solapa con este. No se puede guardar.")
+                        else:
+                            with st.spinner("Guardando..."):
+                                try:
+                                    nombre_hoja = gsheets.crear_y_guardar_programacion(
+                                        df_guardar, periodo_key, mes_real, int(fecha_vencimiento.year)
+                                    )
+                                    gsheets.registrar_fecha_programacion("Mantenimiento", nombre_hoja, fecha_emision, fecha_vencimiento)
+                                    st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                                except Exception as e:
+                                    st.error(f"Error al guardar: {e}")
 
     with subtab2:
         st.subheader("Programaciones Guardadas")
@@ -249,7 +267,7 @@ with tab2:
             anio = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1,
                                    key="anio_medidor")
 
-        # Fechas para Medidores
+        # Fechas
         mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes) + 1
         fecha_emision_def = datetime(anio, mes_num, 23)
         fecha_venc_def = fecha_emision_def + timedelta(days=15)
@@ -261,13 +279,12 @@ with tab2:
             fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def, key="fec_venc_med")
 
         st.divider()
-
         uploaded_file = st.file_uploader("Sube el archivo Excel de MEDIDORES", type=["xlsx"],
                                          key="medidor_file")
 
         if uploaded_file is not None:
             try:
-                # Leer archivo
+                # Leer archivo (misma lógica de antes)
                 df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0)
                 df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
@@ -404,21 +421,26 @@ with tab2:
                     cols_no = ['codigo_5d', 'torre', 'departamento', 'medidor_instalado', 'n_medidor', 'monto']
                     st.dataframe(df_no_coinciden[cols_no].fillna(""), use_container_width=True, height=300)
 
-                if st.button("💾 Guardar en Google Sheets", type="primary"):
-                    if gsheets.existe_solapamiento_fechas("Medidores", fecha_emision, fecha_vencimiento):
-                        st.error("❌ Ya existe una programación de Medidores con un rango de fechas que se solapa con este. No se puede guardar.")
-                    else:
-                        try:
-                            df_guardar = df_coinciden[['codigo_5d', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']].copy()
-                            for col in ['codigo_5d', 'torre', 'departamento', 'n_medidor', 'monto']:
-                                if col in df_guardar.columns:
-                                    df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce')
-                            df_guardar.columns = ['codigo', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']
-                            nombre_hoja = gsheets.guardar_medidor(df=df_guardar, mes=mes, anio=int(anio))
-                            gsheets.registrar_fecha_programacion("Medidores", nombre_hoja, fecha_emision, fecha_vencimiento)
-                            st.success(f"Guardado en hoja: **{nombre_hoja}**")
-                        except Exception as e:
-                            st.error(f"Error al guardar: {str(e)}")
+                # Validar mes de vencimiento
+                valido, mes_real = validar_mes_vencimiento(mes, fecha_vencimiento)
+                if not valido:
+                    st.error(f"❌ El mes seleccionado ({mes}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
+                else:
+                    if st.button("💾 Guardar en Google Sheets", type="primary"):
+                        if gsheets.existe_solapamiento_fechas("Medidores", fecha_emision, fecha_vencimiento):
+                            st.error("❌ Ya existe una programación de Medidores con un rango de fechas que se solapa con este. No se puede guardar.")
+                        else:
+                            try:
+                                df_guardar = df_coinciden[['codigo_5d', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']].copy()
+                                for col in ['codigo_5d', 'torre', 'departamento', 'n_medidor', 'monto']:
+                                    if col in df_guardar.columns:
+                                        df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce')
+                                df_guardar.columns = ['codigo', 'torre', 'departamento', 'nombre', 'dni', 'medidor_instalado', 'n_medidor', 'monto']
+                                nombre_hoja = gsheets.guardar_medidor(df=df_guardar, mes=mes_real, anio=int(fecha_vencimiento.year))
+                                gsheets.registrar_fecha_programacion("Medidores", nombre_hoja, fecha_emision, fecha_vencimiento)
+                                st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                            except Exception as e:
+                                st.error(f"Error al guardar: {str(e)}")
 
             except Exception as e:
                 st.error(f"Error al procesar: {str(e)}")
@@ -518,7 +540,7 @@ with tab3:
         with col2:
             anio_amort = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1, key="anio_amort")
 
-        # Fechas para Amortización
+        # Fechas
         mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes_amort) + 1
         fecha_emision_def = datetime(anio_amort, mes_num, 23)
         fecha_venc_def = fecha_emision_def + timedelta(days=15)
@@ -530,7 +552,6 @@ with tab3:
             fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def, key="fec_venc_amort")
 
         st.divider()
-
         with st.expander("ℹ️ Formato esperado del archivo Excel"):
             st.info("""
             El archivo debe contener las siguientes columnas (en cualquier orden):
@@ -584,19 +605,24 @@ with tab3:
                 st.error(f"Error al leer el archivo: {str(e)}")
 
         if df_amort is not None and not df_amort.empty:
-            if st.button("Guardar en Google Sheets (Amortización)", type="primary", key="guardar_amort"):
-                if gsheets.existe_solapamiento_fechas("Amortización", fecha_emision, fecha_vencimiento):
-                    st.error("❌ Ya existe una programación de Amortización con un rango de fechas que se solapa con este. No se puede guardar.")
-                else:
-                    with st.spinner("Guardando datos de amortización..."):
-                        try:
-                            nombre_hoja = gsheets.guardar_amortizacion(
-                                df_amort, mes_amort, int(anio_amort)
-                            )
-                            gsheets.registrar_fecha_programacion("Amortización", nombre_hoja, fecha_emision, fecha_vencimiento)
-                            st.success(f"¡Guardado correctamente en hoja: **{nombre_hoja}**!")
-                        except Exception as e:
-                            st.error(f"Error al guardar: {str(e)}")
+            # Validar mes de vencimiento
+            valido, mes_real = validar_mes_vencimiento(mes_amort, fecha_vencimiento)
+            if not valido:
+                st.error(f"❌ El mes seleccionado ({mes_amort}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
+            else:
+                if st.button("Guardar en Google Sheets (Amortización)", type="primary", key="guardar_amort"):
+                    if gsheets.existe_solapamiento_fechas("Amortización", fecha_emision, fecha_vencimiento):
+                        st.error("❌ Ya existe una programación de Amortización con un rango de fechas que se solapa con este. No se puede guardar.")
+                    else:
+                        with st.spinner("Guardando datos de amortización..."):
+                            try:
+                                nombre_hoja = gsheets.guardar_amortizacion(
+                                    df_amort, mes_real, int(fecha_vencimiento.year)
+                                )
+                                gsheets.registrar_fecha_programacion("Amortización", nombre_hoja, fecha_emision, fecha_vencimiento)
+                                st.success(f"¡Guardado correctamente en hoja: **{nombre_hoja}**!")
+                            except Exception as e:
+                                st.error(f"Error al guardar: {str(e)}")
         elif df_amort is not None and df_amort.empty:
             st.warning("No se encontraron datos válidos después de filtrar. Verifica el archivo.")
 
@@ -682,7 +708,7 @@ with tab4:
         with col2:
             anio_otros = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1, key="anio_otros")
 
-        # Fechas para Otros
+        # Fechas
         mes_num = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"].index(mes_otros) + 1
         fecha_emision_def = datetime(anio_otros, mes_num, 23)
         fecha_venc_def = fecha_emision_def + timedelta(days=15)
@@ -694,7 +720,6 @@ with tab4:
             fecha_vencimiento = st.date_input("Fecha de Vencimiento", value=fecha_venc_def, key="fec_venc_otros")
 
         st.divider()
-
         with st.expander("ℹ️ Formato esperado del archivo Excel"):
             st.info("""
             El archivo debe contener las siguientes columnas (en cualquier orden):
@@ -819,31 +844,36 @@ with tab4:
                 st.error(f"Error al leer el archivo: {e}")
 
         if df_otros is not None:
-            nombre_hoja = f"Otros {mes_otros} {anio_otros}"
-            spreadsheet = gsheets.get_spreadsheet()
-            try:
-                spreadsheet.worksheet(nombre_hoja)
-                existe = True
-            except gspread.exceptions.WorksheetNotFound:
-                existe = False
-
-            if existe:
-                st.error(f"⚠️ Ya existe una hoja para {mes_otros} {anio_otros}")
-                st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
+            # Validar mes de vencimiento
+            valido, mes_real = validar_mes_vencimiento(mes_otros, fecha_vencimiento)
+            if not valido:
+                st.error(f"❌ El mes seleccionado ({mes_otros}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
             else:
-                if st.button("Guardar en Google Sheets (Otros)", type="primary", key="guardar_otros"):
-                    if gsheets.existe_solapamiento_fechas("Otros", fecha_emision, fecha_vencimiento):
-                        st.error("❌ Ya existe una programación de Otros con un rango de fechas que se solapa con este. No se puede guardar.")
-                    else:
-                        with st.spinner("Guardando..."):
-                            try:
-                                nombre_hoja = gsheets.guardar_otros(
-                                    df_guardar, mes_otros, int(anio_otros)
-                                )
-                                gsheets.registrar_fecha_programacion("Otros", nombre_hoja, fecha_emision, fecha_vencimiento)
-                                st.success(f"Guardado en hoja: **{nombre_hoja}**")
-                            except Exception as e:
-                                st.error(f"Error al guardar: {str(e)}")
+                nombre_hoja = f"Otros {mes_real} {fecha_vencimiento.year}"
+                spreadsheet = gsheets.get_spreadsheet()
+                try:
+                    spreadsheet.worksheet(nombre_hoja)
+                    existe = True
+                except gspread.exceptions.WorksheetNotFound:
+                    existe = False
+
+                if existe:
+                    st.error(f"⚠️ Ya existe una hoja para {mes_real} {fecha_vencimiento.year}")
+                    st.info("Cambia el mes/año o elimina manualmente la hoja en Google Sheets si quieres sobrescribir.")
+                else:
+                    if st.button("Guardar en Google Sheets (Otros)", type="primary", key="guardar_otros"):
+                        if gsheets.existe_solapamiento_fechas("Otros", fecha_emision, fecha_vencimiento):
+                            st.error("❌ Ya existe una programación de Otros con un rango de fechas que se solapa con este. No se puede guardar.")
+                        else:
+                            with st.spinner("Guardando..."):
+                                try:
+                                    nombre_hoja = gsheets.guardar_otros(
+                                        df_guardar, mes_real, int(fecha_vencimiento.year)
+                                    )
+                                    gsheets.registrar_fecha_programacion("Otros", nombre_hoja, fecha_emision, fecha_vencimiento)
+                                    st.success(f"Guardado en hoja: **{nombre_hoja}**")
+                                except Exception as e:
+                                    st.error(f"Error al guardar: {str(e)}")
 
     with subtab2:
         st.subheader("Otros Guardados")
