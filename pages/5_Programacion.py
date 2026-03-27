@@ -27,8 +27,10 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Programación Mantenimiento", "💧 Medi
 
 # ====================== TAB 1: PROGRAMACIÓN MANTENIMIENTO ======================
 with tab1:
+    # Sub‑pestañas dentro de Programación Mantenimiento
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Programación"])
 
+    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
         col1, col2 = st.columns(2)  # Solo dos columnas (eliminado n_deptos)
         with col1:
@@ -92,6 +94,7 @@ with tab1:
                     st.error("No se encontraron las columnas necesarias (TORRE, N°DPTO, MANTENIMIENTO). Verifica el archivo.")
                     st.stop()
 
+                # Crear DataFrame con todas las columnas detectadas
                 df_seleccionado = pd.DataFrame()
                 df_seleccionado['torre'] = df[col_torre]
                 df_seleccionado['departamento'] = df[col_dpto]
@@ -104,6 +107,7 @@ with tab1:
                 if col_nombre:
                     df_seleccionado['nombre'] = df[col_nombre]
 
+                # Convertir columnas numéricas
                 df_seleccionado['torre'] = pd.to_numeric(df_seleccionado['torre'], errors='coerce')
                 df_seleccionado['departamento'] = pd.to_numeric(df_seleccionado['departamento'], errors='coerce')
                 df_seleccionado['Mantenimiento'] = pd.to_numeric(df_seleccionado['Mantenimiento'], errors='coerce')
@@ -114,7 +118,15 @@ with tab1:
                 st.write("Vista previa (primeras 8 filas):")
                 st.dataframe(df_seleccionado.head(8))
 
-                df_guardar = df_seleccionado[['torre', 'departamento', 'Mantenimiento']].copy()
+                # Guardar todas las columnas disponibles (torre, departamento, código, dni, nombre, mantenimiento)
+                columnas_a_guardar = ['torre', 'departamento', 'Mantenimiento']
+                if 'codigo' in df_seleccionado.columns:
+                    columnas_a_guardar.insert(2, 'codigo')
+                if 'dni' in df_seleccionado.columns:
+                    columnas_a_guardar.insert(3, 'dni')
+                if 'nombre' in df_seleccionado.columns:
+                    columnas_a_guardar.insert(4, 'nombre')
+                df_guardar = df_seleccionado[columnas_a_guardar].copy()
 
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
@@ -145,8 +157,10 @@ with tab1:
                                 except Exception as e:
                                     st.error(f"Error al guardar: {e}")
 
+    # ---------- SUBTAB 2: VISUALIZAR PROGRAMACIÓN ----------
     with subtab2:
         st.subheader("Programaciones Guardadas")
+
         try:
             hojas_prog = gsheets.listar_hojas_programacion()
         except Exception as e:
@@ -159,6 +173,7 @@ with tab1:
 
             if not df_guardado.empty:
                 df_guardado = df_guardado.drop_duplicates(subset=['torre', 'departamento'], keep='first')
+
                 prop = gsheets.leer_propietarios()
                 if not prop.empty:
                     col_torre_prop = None
@@ -177,11 +192,20 @@ with tab1:
                         prop_sub['torre'] = pd.to_numeric(prop_sub['torre'], errors='coerce')
                         prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
                         prop_sub = prop_sub.drop_duplicates(subset=['torre', 'departamento'], keep='first')
-                        df_mostrar = df_guardado.merge(prop_sub, on=['torre', 'departamento'], how='left')
+                        # Si la hoja guardada ya tiene código, dni y nombre, no se sobrescriben; si no, se toman de propietarios
+                        columnas_existentes = df_guardado.columns.tolist()
+                        if 'codigo' not in columnas_existentes:
+                            df_guardado = df_guardado.merge(prop_sub[['torre', 'departamento', 'codigo']], on=['torre', 'departamento'], how='left')
+                        if 'dni' not in columnas_existentes:
+                            df_guardado = df_guardado.merge(prop_sub[['torre', 'departamento', 'dni']], on=['torre', 'departamento'], how='left')
+                        if 'nombre' not in columnas_existentes:
+                            df_guardado = df_guardado.merge(prop_sub[['torre', 'departamento', 'nombre']], on=['torre', 'departamento'], how='left')
+                        df_mostrar = df_guardado.copy()
                 else:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
                     df_mostrar = df_guardado.copy()
 
+                # Formatear números
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -203,17 +227,23 @@ with tab1:
                 mapeo = {
                     'torre': 'TORRE',
                     'departamento': 'N°DPTO',
-                    'nombre': 'NOMBRES Y APELLIDOS',
+                    'codigo': 'CÓDIGO',
                     'dni': 'DNI',
+                    'nombre': 'NOMBRES Y APELLIDOS',
                     'Mantenimiento': 'MANTENIMIENTO (S/)'
                 }
                 df_viz = df_mostrar.rename(columns={col: mapeo[col] for col in df_mostrar.columns if col in mapeo})
                 df_viz = df_viz.loc[:, ~df_viz.columns.duplicated()]
 
-                columnas_final = ['TORRE', 'N°DPTO', 'NOMBRES Y APELLIDOS', 'DNI', 'MANTENIMIENTO (S/)']
+                # Orden de columnas deseado
+                columnas_final = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'NOMBRES Y APELLIDOS', 'MANTENIMIENTO (S/)']
                 columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
-                if 'NOMBRES Y APELLIDOS' not in df_viz.columns:
-                    columnas_existentes = ['TORRE', 'N°DPTO', 'MANTENIMIENTO (S/)']
+                if 'CÓDIGO' not in columnas_existentes:
+                    columnas_existentes = [col for col in columnas_final if col != 'CÓDIGO']
+                if 'DNI' not in columnas_existentes:
+                    columnas_existentes = [col for col in columnas_final if col != 'DNI']
+                if 'NOMBRES Y APELLIDOS' not in columnas_existentes:
+                    columnas_existentes = [col for col in columnas_final if col != 'NOMBRES Y APELLIDOS']
                 df_viz = df_viz[columnas_existentes]
 
                 def extraer_numero(val):
@@ -252,7 +282,6 @@ with tab1:
                 st.info("La hoja seleccionada está vacía.")
         else:
             st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
-
 # ====================== TAB 2: MEDIDORES ======================
 with tab2:
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Medidores"])
