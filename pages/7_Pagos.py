@@ -156,39 +156,25 @@ with tab1:
                     st.info(f"📊 Se van a guardar **{len(df_guardar)}** filas coincidentes.")
 
                     # --- LIMPIEZA ROBUSTA ANTES DE GUARDAR ---
-                    # 1. Limpiar espacios en todas las columnas de texto
+                    # 1. Limpiar espacios en columnas de texto
                     for col in ['descripcion', 'codigo', 'nombre', 'dni', 'n_operacion']:
                         if col in df_guardar.columns:
                             df_guardar[col] = df_guardar[col].astype(str).str.strip().fillna('')
 
-                    # 2. FECHA: manejo multi-formato
+                    # 2. FECHA: manejo directo (sin convertir a string previamente)
                     if 'fecha' in df_guardar.columns:
-                        df_guardar['fecha'] = df_guardar['fecha'].astype(str).str.strip()
-                        
-                        # Función que prueba varios formatos
-                        def parse_fecha(serie):
-                            # Formato ISO
-                            parsed = pd.to_datetime(serie, format='%Y-%m-%d', errors='coerce')
-                            if parsed.notna().any():
-                                return parsed
-                            # Formato dd/mm/yyyy
-                            parsed = pd.to_datetime(serie, format='%d/%m/%Y', errors='coerce')
-                            if parsed.notna().any():
-                                return parsed
-                            # Formato mm/dd/yyyy
-                            parsed = pd.to_datetime(serie, format='%m/%d/%Y', errors='coerce')
-                            if parsed.notna().any():
-                                return parsed
-                            # Último recurso: dayfirst=True
-                            return pd.to_datetime(serie, errors='coerce', dayfirst=True)
-                        
-                        df_guardar['fecha_dt'] = parse_fecha(df_guardar['fecha'])
+                        # Guardar copia de los valores originales para depuración
+                        original_fechas = df_guardar['fecha'].copy()
+                        # Convertir a datetime (Pandas detecta automáticamente formatos ISO con hora)
+                        df_guardar['fecha_dt'] = pd.to_datetime(df_guardar['fecha'], errors='coerce')
                         invalid_mask = df_guardar['fecha_dt'].isna()
                         if invalid_mask.any():
                             st.warning(f"⚠️ {invalid_mask.sum()} filas tienen fecha inválida y se guardarán sin fecha.")
-                            st.write("Ejemplos de fechas no reconocidas (primeras 10):")
-                            st.dataframe(df_guardar[invalid_mask][['fecha']].head(10))
-                        # Formatear a string YYYY-MM-DD
+                            # Mostrar ejemplos de los valores originales que fallaron
+                            invalid_examples = original_fechas[invalid_mask].head(10)
+                            st.write("Ejemplos de valores originales no reconocidos:")
+                            st.dataframe(pd.DataFrame(invalid_examples, columns=['fecha_original']))
+                        # Formatear a string YYYY-MM-DD para guardar en Sheets
                         df_guardar['fecha'] = df_guardar['fecha_dt'].dt.strftime('%Y-%m-%d').fillna('')
                         df_guardar.drop('fecha_dt', axis=1, inplace=True)
 
