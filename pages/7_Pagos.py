@@ -156,26 +156,46 @@ with tab1:
                     st.info(f"📊 Se van a guardar **{len(df_guardar)}** filas coincidentes.")
 
                     # --- LIMPIEZA ROBUSTA ANTES DE GUARDAR ---
-                    # 1. Fecha: convertir a string en formato YYYY-MM-DD (sin perder ninguna fila)
-                    if 'fecha' in df_guardar.columns:
-                        # Convertir a datetime; los errores quedan como NaT
-                        df_guardar['fecha'] = pd.to_datetime(df_guardar['fecha'], errors='coerce')
-                        # Para depuración: mostrar cuántos NaT hay
-                        nat_count = df_guardar['fecha'].isna().sum()
-                        if nat_count > 0:
-                            st.warning(f"⚠️ {nat_count} filas tienen fecha inválida y se guardarán sin fecha.")
-                        # Formatear a string YYYY-MM-DD, los NaT se convierten a ''
-                        df_guardar['fecha'] = df_guardar['fecha'].dt.strftime('%Y-%m-%d').fillna('')
+                    # 1. Limpiar espacios en todas las columnas de texto
+                    for col in ['descripcion', 'codigo', 'nombre', 'dni', 'n_operacion']:
+                        if col in df_guardar.columns:
+                            df_guardar[col] = df_guardar[col].astype(str).str.strip().fillna('')
 
-                    # 2. Columnas numéricas: asegurar float y reemplazar NaN por 0
+                    # 2. FECHA: manejo multi-formato
+                    if 'fecha' in df_guardar.columns:
+                        df_guardar['fecha'] = df_guardar['fecha'].astype(str).str.strip()
+                        
+                        # Función que prueba varios formatos
+                        def parse_fecha(serie):
+                            # Formato ISO
+                            parsed = pd.to_datetime(serie, format='%Y-%m-%d', errors='coerce')
+                            if parsed.notna().any():
+                                return parsed
+                            # Formato dd/mm/yyyy
+                            parsed = pd.to_datetime(serie, format='%d/%m/%Y', errors='coerce')
+                            if parsed.notna().any():
+                                return parsed
+                            # Formato mm/dd/yyyy
+                            parsed = pd.to_datetime(serie, format='%m/%d/%Y', errors='coerce')
+                            if parsed.notna().any():
+                                return parsed
+                            # Último recurso: dayfirst=True
+                            return pd.to_datetime(serie, errors='coerce', dayfirst=True)
+                        
+                        df_guardar['fecha_dt'] = parse_fecha(df_guardar['fecha'])
+                        invalid_mask = df_guardar['fecha_dt'].isna()
+                        if invalid_mask.any():
+                            st.warning(f"⚠️ {invalid_mask.sum()} filas tienen fecha inválida y se guardarán sin fecha.")
+                            st.write("Ejemplos de fechas no reconocidas (primeras 10):")
+                            st.dataframe(df_guardar[invalid_mask][['fecha']].head(10))
+                        # Formatear a string YYYY-MM-DD
+                        df_guardar['fecha'] = df_guardar['fecha_dt'].dt.strftime('%Y-%m-%d').fillna('')
+                        df_guardar.drop('fecha_dt', axis=1, inplace=True)
+
+                    # 3. Columnas numéricas: asegurar float y reemplazar NaN por 0
                     for col in ['mantenimiento', 'amortizacion', 'medidor']:
                         if col in df_guardar.columns:
                             df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce').fillna(0)
-
-                    # 3. Columnas de texto: convertir a string y reemplazar NaN por ''
-                    for col in ['descripcion', 'codigo', 'nombre', 'dni', 'n_operacion']:
-                        if col in df_guardar.columns:
-                            df_guardar[col] = df_guardar[col].astype(str).fillna('')
 
                     # 4. Asegurar que torre y departamento sean enteros (sin decimales) y no NaN
                     for col in ['torre', 'departamento']:
