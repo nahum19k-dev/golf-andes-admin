@@ -153,14 +153,19 @@ with tab1:
                     cols_existentes = [c for c in columnas_guardar if c in df_coinciden.columns]
                     df_guardar = df_coinciden[cols_existentes].copy()
 
-                    st.info(f"📊 Se van a guardar {len(df_guardar)} filas coincidentes.")
+                    st.info(f"📊 Se van a guardar **{len(df_guardar)}** filas coincidentes.")
 
                     # --- LIMPIEZA ROBUSTA ANTES DE GUARDAR ---
-                    # 1. Fecha: convertir a string en formato YYYY-MM-DD
+                    # 1. Fecha: convertir a string en formato YYYY-MM-DD (sin perder ninguna fila)
                     if 'fecha' in df_guardar.columns:
+                        # Convertir a datetime; los errores quedan como NaT
                         df_guardar['fecha'] = pd.to_datetime(df_guardar['fecha'], errors='coerce')
-                        df_guardar['fecha'] = df_guardar['fecha'].dt.strftime('%Y-%m-%d')
-                        df_guardar['fecha'] = df_guardar['fecha'].fillna('')
+                        # Para depuración: mostrar cuántos NaT hay
+                        nat_count = df_guardar['fecha'].isna().sum()
+                        if nat_count > 0:
+                            st.warning(f"⚠️ {nat_count} filas tienen fecha inválida y se guardarán sin fecha.")
+                        # Formatear a string YYYY-MM-DD, los NaT se convierten a ''
+                        df_guardar['fecha'] = df_guardar['fecha'].dt.strftime('%Y-%m-%d').fillna('')
 
                     # 2. Columnas numéricas: asegurar float y reemplazar NaN por 0
                     for col in ['mantenimiento', 'amortizacion', 'medidor']:
@@ -301,8 +306,17 @@ with tab2:
             # Botón eliminar
             st.markdown("---")
             if st.button("🗑️ Eliminar esta hoja de pagos", type="secondary", key=f"del_pagos_{hoja_seleccionada}"):
+                # Extraer mes y año del nombre de la hoja para mostrar mensaje
+                nombre_parts = hoja_seleccionada.replace("Pagos ", "").split()
+                if len(nombre_parts) >= 2:
+                    mes_eliminado = nombre_parts[0]
+                    anio_eliminado = nombre_parts[1]
+                    mensaje = f"Eliminado: {mes_eliminado} {anio_eliminado}"
+                else:
+                    mensaje = f"Eliminado: {hoja_seleccionada}"
+
                 if gsheets.eliminar_programacion(hoja_seleccionada):
-                    st.success(f"Se eliminó la hoja '{hoja_seleccionada}' correctamente.")
+                    st.success(f"✅ {mensaje}")
                     st.cache_resource.clear()
                     st.rerun()
                 else:
