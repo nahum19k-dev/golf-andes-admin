@@ -118,7 +118,7 @@ with tab1:
                 st.write("Vista previa (primeras 8 filas):")
                 st.dataframe(df_seleccionado.head(8))
 
-                # Guardar todas las columnas disponibles (torre, departamento, código, dni, nombre, mantenimiento)
+                # Guardar todas las columnas disponibles
                 columnas_a_guardar = ['torre', 'departamento', 'Mantenimiento']
                 if 'codigo' in df_seleccionado.columns:
                     columnas_a_guardar.insert(2, 'codigo')
@@ -173,39 +173,88 @@ with tab1:
 
             if not df_guardado.empty:
                 df_guardado = df_guardado.drop_duplicates(subset=['torre', 'departamento'], keep='first')
-
                 prop = gsheets.leer_propietarios()
+
+                # ========== PREPARAR TABLA DE PROPIETARIOS CON COLUMNAS ESTÁNDAR ==========
                 if not prop.empty:
+                    # Detectar columnas de torre y departamento
                     col_torre_prop = None
                     col_dpto_prop = None
                     for col in prop.columns:
                         if col.lower() == 'torre':
                             col_torre_prop = col
-                        elif col.lower() in ['departamento', 'dpto', 'n°dpto']:
+                        if col.lower() in ['departamento', 'dpto', 'n°dpto']:
                             col_dpto_prop = col
-                    if col_torre_prop is None or col_dpto_prop is None:
-                        st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios. No se mostrarán nombres ni DNI.")
-                        df_mostrar = df_guardado.copy()
-                    else:
-                        prop_sub = prop[[col_torre_prop, col_dpto_prop, 'nombre', 'dni']].copy()
-                        prop_sub.rename(columns={col_torre_prop: 'torre', col_dpto_prop: 'departamento'}, inplace=True)
+                    if col_torre_prop is not None and col_dpto_prop is not None:
+                        # Incluir también código, dni, nombre si existen
+                        columnas_seleccion = [col_torre_prop, col_dpto_prop]
+                        # Detectar código
+                        col_codigo_prop = None
+                        for col in prop.columns:
+                            if col.lower() == 'codigo':
+                                col_codigo_prop = col
+                                break
+                        if col_codigo_prop:
+                            columnas_seleccion.append(col_codigo_prop)
+                        # Detectar dni
+                        col_dni_prop = None
+                        for col in prop.columns:
+                            if col.lower() == 'dni':
+                                col_dni_prop = col
+                                break
+                        if col_dni_prop:
+                            columnas_seleccion.append(col_dni_prop)
+                        # Detectar nombre
+                        col_nombre_prop = None
+                        for col in prop.columns:
+                            if col.lower() in ['nombre', 'apellidos y nombres']:
+                                col_nombre_prop = col
+                                break
+                        if col_nombre_prop:
+                            columnas_seleccion.append(col_nombre_prop)
+
+                        prop_sub = prop[columnas_seleccion].copy()
+                        # Renombrar columnas a nombres estándar
+                        rename_map = {}
+                        if col_torre_prop:
+                            rename_map[col_torre_prop] = 'torre'
+                        if col_dpto_prop:
+                            rename_map[col_dpto_prop] = 'departamento'
+                        if col_codigo_prop:
+                            rename_map[col_codigo_prop] = 'codigo'
+                        if col_dni_prop:
+                            rename_map[col_dni_prop] = 'dni'
+                        if col_nombre_prop:
+                            rename_map[col_nombre_prop] = 'nombre'
+                        prop_sub.rename(columns=rename_map, inplace=True)
                         prop_sub['torre'] = pd.to_numeric(prop_sub['torre'], errors='coerce')
                         prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
                         prop_sub = prop_sub.drop_duplicates(subset=['torre', 'departamento'], keep='first')
-                        # Si la hoja guardada ya tiene código, dni y nombre, no se sobrescriben; si no, se toman de propietarios
-                        columnas_existentes = df_guardado.columns.tolist()
-                        if 'codigo' not in columnas_existentes:
-                            df_guardado = df_guardado.merge(prop_sub[['torre', 'departamento', 'codigo']], on=['torre', 'departamento'], how='left')
-                        if 'dni' not in columnas_existentes:
-                            df_guardado = df_guardado.merge(prop_sub[['torre', 'departamento', 'dni']], on=['torre', 'departamento'], how='left')
-                        if 'nombre' not in columnas_existentes:
-                            df_guardado = df_guardado.merge(prop_sub[['torre', 'departamento', 'nombre']], on=['torre', 'departamento'], how='left')
-                        df_mostrar = df_guardado.copy()
+                    else:
+                        st.warning("No se pudieron identificar las columnas de torre y departamento en Propietarios.")
+                        prop_sub = None
+                else:
+                    prop_sub = None
+                    st.warning("No se pudo cargar la lista de propietarios.")
+
+                # ========== COMPLETAR DATOS FALTANTES ==========
+                df_mostrar = df_guardado.copy()
+                if prop_sub is not None:
+                    # Completar código, dni, nombre solo si no existen en df_guardado
+                    columnas_guardado = df_guardado.columns.tolist()
+                    if 'codigo' not in columnas_guardado and 'codigo' in prop_sub.columns:
+                        df_mostrar = df_mostrar.merge(prop_sub[['torre', 'departamento', 'codigo']],
+                                                       on=['torre', 'departamento'], how='left')
+                    if 'dni' not in columnas_guardado and 'dni' in prop_sub.columns:
+                        df_mostrar = df_mostrar.merge(prop_sub[['torre', 'departamento', 'dni']],
+                                                       on=['torre', 'departamento'], how='left')
+                    if 'nombre' not in columnas_guardado and 'nombre' in prop_sub.columns:
+                        df_mostrar = df_mostrar.merge(prop_sub[['torre', 'departamento', 'nombre']],
+                                                       on=['torre', 'departamento'], how='left')
                 else:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
-                    df_mostrar = df_guardado.copy()
 
-                # Formatear números
+                # ========== FORMATEAR NÚMEROS ==========
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -224,6 +273,7 @@ with tab1:
                     if col in df_mostrar.columns:
                         df_mostrar[col] = df_mostrar[col].apply(formatear_numero)
 
+                # ========== RENOMBRAR PARA VISUALIZACIÓN ==========
                 mapeo = {
                     'torre': 'TORRE',
                     'departamento': 'N°DPTO',
@@ -238,14 +288,9 @@ with tab1:
                 # Orden de columnas deseado
                 columnas_final = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'NOMBRES Y APELLIDOS', 'MANTENIMIENTO (S/)']
                 columnas_existentes = [col for col in columnas_final if col in df_viz.columns]
-                if 'CÓDIGO' not in columnas_existentes:
-                    columnas_existentes = [col for col in columnas_final if col != 'CÓDIGO']
-                if 'DNI' not in columnas_existentes:
-                    columnas_existentes = [col for col in columnas_final if col != 'DNI']
-                if 'NOMBRES Y APELLIDOS' not in columnas_existentes:
-                    columnas_existentes = [col for col in columnas_final if col != 'NOMBRES Y APELLIDOS']
                 df_viz = df_viz[columnas_existentes]
 
+                # ========== TOTAL MANTENIMIENTO ==========
                 def extraer_numero(val):
                     if pd.isna(val) or val == '':
                         return 0.0
@@ -282,10 +327,13 @@ with tab1:
                 st.info("La hoja seleccionada está vacía.")
         else:
             st.info("No hay programaciones guardadas. Sube un archivo en la pestaña 'Subir y Procesar' para crear una.")
+
 # ====================== TAB 2: MEDIDORES ======================
 with tab2:
+    # Sub‑pestañas dentro de Medidores
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Medidores"])
 
+    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
         col1, col2 = st.columns(2)
         with col1:
@@ -474,6 +522,7 @@ with tab2:
             except Exception as e:
                 st.error(f"Error al procesar: {str(e)}")
 
+    # ---------- SUBTAB 2: VISUALIZAR MEDIDORES ----------
     with subtab2:
         st.subheader("📊 Visualizar Medidores Guardados")
         try:
@@ -919,6 +968,7 @@ with tab4:
             if not df_guardado.empty:
                 prop = gsheets.leer_propietarios()
                 if not prop.empty and 'nombre' not in df_guardado.columns:
+                    # Preparar propietarios con columnas estándar (similar a lo hecho en Mantenimiento)
                     col_torre_prop = None
                     col_dpto_prop = None
                     for col in prop.columns:
@@ -927,8 +977,32 @@ with tab4:
                         elif col.lower() in ['departamento', 'dpto', 'n°dpto']:
                             col_dpto_prop = col
                     if col_torre_prop is not None and col_dpto_prop is not None:
-                        prop_sub = prop[[col_torre_prop, col_dpto_prop, 'nombre', 'dni']].copy()
-                        prop_sub.rename(columns={col_torre_prop: 'torre', col_dpto_prop: 'departamento'}, inplace=True)
+                        columnas_seleccion = [col_torre_prop, col_dpto_prop]
+                        col_nombre_prop = None
+                        for col in prop.columns:
+                            if col.lower() in ['nombre', 'apellidos y nombres']:
+                                col_nombre_prop = col
+                                break
+                        if col_nombre_prop:
+                            columnas_seleccion.append(col_nombre_prop)
+                        col_dni_prop = None
+                        for col in prop.columns:
+                            if col.lower() == 'dni':
+                                col_dni_prop = col
+                                break
+                        if col_dni_prop:
+                            columnas_seleccion.append(col_dni_prop)
+                        prop_sub = prop[columnas_seleccion].copy()
+                        rename_map = {}
+                        if col_torre_prop:
+                            rename_map[col_torre_prop] = 'torre'
+                        if col_dpto_prop:
+                            rename_map[col_dpto_prop] = 'departamento'
+                        if col_nombre_prop:
+                            rename_map[col_nombre_prop] = 'nombre'
+                        if col_dni_prop:
+                            rename_map[col_dni_prop] = 'dni'
+                        prop_sub.rename(columns=rename_map, inplace=True)
                         prop_sub['torre'] = pd.to_numeric(prop_sub['torre'], errors='coerce')
                         prop_sub['departamento'] = pd.to_numeric(prop_sub['departamento'], errors='coerce')
                         prop_sub = prop_sub.drop_duplicates(subset=['torre', 'departamento'], keep='first')
