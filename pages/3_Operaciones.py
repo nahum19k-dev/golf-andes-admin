@@ -402,13 +402,21 @@ with tab2:
         for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_pagado']:
             df_resumen[col] = df_resumen[col].apply(limpiar_numero)
 
-        # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO (EN LUGAR DE CÓDIGO) ----------
-        # Crear una clave única combinando torre y departamento
+        # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO ----------
+        # Asegurar que torre y departamento sean numéricos (ya lo están, pero por si acaso)
+        df_resumen['torre'] = pd.to_numeric(df_resumen['torre'], errors='coerce')
+        df_resumen['departamento'] = pd.to_numeric(df_resumen['departamento'], errors='coerce')
+        # Eliminar filas con torre o departamento NaN (no debería haber, pero por seguridad)
+        df_resumen = df_resumen.dropna(subset=['torre', 'departamento'])
+
+        # Crear clave única combinando torre y departamento
         df_resumen['clave'] = df_resumen['torre'].astype(str) + '_' + df_resumen['departamento'].astype(str)
+
+        # Agrupar por clave
         grupo = df_resumen.groupby('clave')
 
-        # Tomar el primer registro (los cargos) de cada grupo, conservando la columna 'clave'
-        primer_registro = grupo.first().reset_index()  # <-- sin drop=True
+        # Tomar el primer registro (los cargos) de cada grupo
+        primer_registro = grupo.first().reset_index(drop=True)
         # Eliminar la columna 'total_pagado' del primer registro (son los cargos, pagado=0)
         if 'total_pagado' in primer_registro.columns:
             primer_registro = primer_registro.drop(columns=['total_pagado'])
@@ -429,7 +437,13 @@ with tab2:
 
         # Sumar total pagado por clave (torre+departamento)
         total_pagado_por_clave = grupo['total_pagado'].sum().reset_index(name='total_pagado')
-        # Ya tiene columna 'clave' (el índice del grupo se convierte en columna)
+        # Asegurar que la columna de clave se llame 'clave'
+        if 'index' in total_pagado_por_clave.columns:
+            total_pagado_por_clave.rename(columns={'index': 'clave'}, inplace=True)
+        # Si ya tiene 'clave', está bien
+        if 'clave' not in total_pagado_por_clave.columns:
+            # Si por alguna razón no está, la creamos desde el índice
+            total_pagado_por_clave = total_pagado_por_clave.reset_index().rename(columns={'index': 'clave'})
 
         # Combinar cargos y pagos
         resumen = primer_registro.merge(total_pagado_por_clave, on='clave', how='left')
