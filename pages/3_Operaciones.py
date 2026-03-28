@@ -289,7 +289,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '    <tr>\n'
+                    html += '     <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -298,7 +298,7 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '      </tr>\n'
+                    html += '     </tr>\n'
 
                 html += '      <tr>\n'
                 for col in col_names:
@@ -403,10 +403,9 @@ with tab2:
             df_resumen[col] = df_resumen[col].apply(limpiar_numero)
 
         # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO ----------
-        # Asegurar que torre y departamento sean numéricos (ya lo están, pero por si acaso)
+        # Asegurar que torre y departamento sean numéricos
         df_resumen['torre'] = pd.to_numeric(df_resumen['torre'], errors='coerce')
         df_resumen['departamento'] = pd.to_numeric(df_resumen['departamento'], errors='coerce')
-        # Eliminar filas con torre o departamento NaN (no debería haber, pero por seguridad)
         df_resumen = df_resumen.dropna(subset=['torre', 'departamento'])
 
         # Crear clave única combinando torre y departamento
@@ -415,8 +414,8 @@ with tab2:
         # Agrupar por clave
         grupo = df_resumen.groupby('clave')
 
-        # Tomar el primer registro (los cargos) de cada grupo
-        primer_registro = grupo.first().reset_index(drop=True)
+        # Tomar el primer registro (los cargos) de cada grupo, conservando la clave
+        primer_registro = grupo.first().reset_index()  # esto mantiene 'clave' como columna
         # Eliminar la columna 'total_pagado' del primer registro (son los cargos, pagado=0)
         if 'total_pagado' in primer_registro.columns:
             primer_registro = primer_registro.drop(columns=['total_pagado'])
@@ -435,17 +434,10 @@ with tab2:
             primer_registro['medidor']
         )
 
-        # Sumar total pagado por clave (torre+departamento)
-        total_pagado_por_clave = grupo['total_pagado'].sum().reset_index(name='total_pagado')
-        # Asegurar que la columna de clave se llame 'clave'
-        if 'index' in total_pagado_por_clave.columns:
-            total_pagado_por_clave.rename(columns={'index': 'clave'}, inplace=True)
-        # Si ya tiene 'clave', está bien
-        if 'clave' not in total_pagado_por_clave.columns:
-            # Si por alguna razón no está, la creamos desde el índice
-            total_pagado_por_clave = total_pagado_por_clave.reset_index().rename(columns={'index': 'clave'})
+        # Sumar total pagado por clave, conservando la clave
+        total_pagado_por_clave = grupo['total_pagado'].sum().reset_index()  # esto crea columna 'clave'
 
-        # Combinar cargos y pagos
+        # Combinar cargos y pagos usando la columna 'clave' en ambos
         resumen = primer_registro.merge(total_pagado_por_clave, on='clave', how='left')
         resumen['total_pagado'] = resumen['total_pagado'].fillna(0)
 
@@ -461,9 +453,12 @@ with tab2:
         resumen['TOTAL PAGADO'] = resumen['total_pagado'].apply(lambda x: f"{x:,.2f}")
         resumen['SALDO A PAGAR'] = resumen['saldo_a_pagar'].apply(lambda x: f"{x:,.2f}")
 
-        # Seleccionar columnas finales
-        resumen_final = resumen[['torre', 'departamento', 'codigo', 'dni', 'nombre',
-                                  'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']].copy()
+        # Seleccionar columnas finales (sin la columna 'clave')
+        columnas_finales = ['torre', 'departamento', 'codigo', 'dni', 'nombre',
+                            'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
+        # Asegurar que existan
+        columnas_existentes = [c for c in columnas_finales if c in resumen.columns]
+        resumen_final = resumen[columnas_existentes].copy()
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES',
                                  'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
 
