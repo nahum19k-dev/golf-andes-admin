@@ -16,7 +16,6 @@ if 'mes_actual' not in st.session_state:
     st.session_state.mes_actual = None
 if 'anio_actual' not in st.session_state:
     st.session_state.anio_actual = None
-# <-- MODIFICACIÓN: guardar fechas del período
 if 'fecha_emision' not in st.session_state:
     st.session_state.fecha_emision = None
 if 'fecha_vencimiento' not in st.session_state:
@@ -248,12 +247,12 @@ with tab1:
                 st.session_state.mes_actual = mes
                 st.session_state.anio_actual = anio
 
-                # <-- MODIFICACIÓN: OBTENER Y GUARDAR LAS FECHAS DEL PERÍODO (Mantenimiento como referencia)
+                # Obtener y guardar las fechas del período (Mantenimiento como referencia)
                 fecha_emi, fecha_ven = gsheets.obtener_fechas_programacion("Mantenimiento", mes, anio)
                 st.session_state.fecha_emision = fecha_emi
                 st.session_state.fecha_vencimiento = fecha_ven
 
-                # ---------- APLICAR FILTRO POR CÓDIGO ----------
+                # Aplicar filtro por código si se especificó
                 if codigo_filtro.strip():
                     mask = df_final['codigo'].astype(str).str.contains(codigo_filtro.strip(), case=False, na=False)
                     df_final = df_final[mask].copy()
@@ -263,9 +262,8 @@ with tab1:
                         df_final = df_final.reset_index(drop=True)
                         df_final.index = df_final.index + 1
                         df_final['#'] = df_final.index
-                # -----------------------------------------
 
-                # <-- MODIFICACIÓN: MOSTRAR RANGO DE FECHAS SI EXISTE
+                # Mostrar rango de fechas si existe
                 if fecha_emi and fecha_ven:
                     st.info(f"📅 **Período de programación:** {fecha_emi.strftime('%d/%m/%Y')} al {fecha_ven.strftime('%d/%m/%Y')}")
                 else:
@@ -273,16 +271,12 @@ with tab1:
 
                 # ========== GENERAR TABLA HTML CON CABECERAS AGRUPADAS ==========
                 col_names = list(df_final.columns)
-
-                # Grupos de columnas
                 grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
                 grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
 
-                # Encontrar índices
                 prog_indices = [i for i, col in enumerate(col_names) if col in grupo_prog]
                 pagos_indices = [i for i, col in enumerate(col_names) if col in grupo_pagos]
 
-                # Construir HTML con etiquetas correctas
                 html = '<div style="overflow-x: auto; max-width: 100%;">\n'
                 html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">\n'
                 html += '<thead>\n'
@@ -295,31 +289,23 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    # Primera fila (agrupación)
                     html += '    <tr>\n'
-                    # Celdas vacías antes de PROGRAMACION
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    # Celda fusionada PROGRAMACION
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
-                    # Celdas vacías entre grupos
                     for i in range(prog_last+1, pagos_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    # Celda fusionada PAGOS
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
-                    # Celdas vacías después de PAGOS
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '    </tr>\n'
+                    html += '     </tr>\n'
 
-                # Segunda fila: nombres de columnas
                 html += '     <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
                 html += '     </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
-                # Filas de datos
                 for _, row in df_final.iterrows():
                     html += '     <tr>\n'
                     for col in col_names:
@@ -349,7 +335,6 @@ with tab1:
     else:
         if st.session_state.datos_cargados:
             st.info(f"Datos cargados para {st.session_state.mes_actual} {st.session_state.anio_actual}. Puedes visualizar el resumen en la otra pestaña.")
-            # <-- MODIFICACIÓN: mostrar también las fechas si están disponibles
             if st.session_state.fecha_emision and st.session_state.fecha_vencimiento:
                 st.info(f"📅 Período: {st.session_state.fecha_emision.strftime('%d/%m/%Y')} al {st.session_state.fecha_vencimiento.strftime('%d/%m/%Y')}")
         else:
@@ -417,12 +402,13 @@ with tab2:
         for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_pagado']:
             df_resumen[col] = df_resumen[col].apply(limpiar_numero)
 
-        # ---------- AGREGACIÓN POR DEPARTAMENTO ----------
-        df_resumen['codigo_str'] = df_resumen['codigo'].astype(str)
-        grupo = df_resumen.groupby('codigo_str')
+        # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO (EN LUGAR DE CÓDIGO) ----------
+        # Crear una clave única combinando torre y departamento
+        df_resumen['clave'] = df_resumen['torre'].astype(str) + '_' + df_resumen['departamento'].astype(str)
+        grupo = df_resumen.groupby('clave')
 
-        # Tomar el primer registro (cargos) y asegurar que 'codigo_str' esté como columna
-        primer_registro = grupo.first().reset_index()  # reset_index convierte el índice en columna
+        # Tomar el primer registro (los cargos) de cada grupo
+        primer_registro = grupo.first().reset_index(drop=True)
         # Eliminar la columna 'total_pagado' del primer registro (son los cargos, pagado=0)
         if 'total_pagado' in primer_registro.columns:
             primer_registro = primer_registro.drop(columns=['total_pagado'])
@@ -441,18 +427,19 @@ with tab2:
             primer_registro['medidor']
         )
 
-        # Sumar total pagado por código
-        total_pagado_por_codigo = grupo['total_pagado'].sum().reset_index(name='total_pagado')
-        # total_pagado_por_codigo ya tiene 'codigo_str' como columna
+        # Sumar total pagado por clave (torre+departamento)
+        total_pagado_por_clave = grupo['total_pagado'].sum().reset_index(name='total_pagado')
+        # Renombrar la columna 'clave' para hacer el merge
+        total_pagado_por_clave.rename(columns={'clave': 'clave'}, inplace=True)
 
-        # Combinar
-        resumen = primer_registro.merge(total_pagado_por_codigo, on='codigo_str', how='left')
+        # Combinar cargos y pagos
+        resumen = primer_registro.merge(total_pagado_por_clave, on='clave', how='left')
         resumen['total_pagado'] = resumen['total_pagado'].fillna(0)
 
         # Saldo a Pagar = Total Deuda - Total Pagado
         resumen['saldo_a_pagar'] = resumen['total_deuda'] - resumen['total_pagado']
 
-        # Ordenar
+        # Ordenar por torre y saldo
         resumen = resumen.sort_values(['torre', 'saldo_a_pagar'], ascending=[True, False])
 
         # Formatear para mostrar
@@ -461,6 +448,7 @@ with tab2:
         resumen['TOTAL PAGADO'] = resumen['total_pagado'].apply(lambda x: f"{x:,.2f}")
         resumen['SALDO A PAGAR'] = resumen['saldo_a_pagar'].apply(lambda x: f"{x:,.2f}")
 
+        # Seleccionar columnas finales
         resumen_final = resumen[['torre', 'departamento', 'codigo', 'dni', 'nombre',
                                   'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']].copy()
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES',
