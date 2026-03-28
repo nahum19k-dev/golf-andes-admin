@@ -298,21 +298,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '     </tr>\n'
+                    html += '      </tr>\n'
 
-                html += '     <tr>\n'
+                html += '      <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '     </tr>\n'
+                html += '      </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '     <tr>\n'
+                    html += '      <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '     </tr>\n'
+                    html += '      </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -407,8 +407,8 @@ with tab2:
         df_resumen['clave'] = df_resumen['torre'].astype(str) + '_' + df_resumen['departamento'].astype(str)
         grupo = df_resumen.groupby('clave')
 
-        # Tomar el primer registro (los cargos) de cada grupo
-        primer_registro = grupo.first().reset_index(drop=True)
+        # Tomar el primer registro (los cargos) de cada grupo, conservando la columna 'clave'
+        primer_registro = grupo.first().reset_index()  # <-- sin drop=True
         # Eliminar la columna 'total_pagado' del primer registro (son los cargos, pagado=0)
         if 'total_pagado' in primer_registro.columns:
             primer_registro = primer_registro.drop(columns=['total_pagado'])
@@ -429,8 +429,7 @@ with tab2:
 
         # Sumar total pagado por clave (torre+departamento)
         total_pagado_por_clave = grupo['total_pagado'].sum().reset_index(name='total_pagado')
-        # Renombrar la columna 'clave' para hacer el merge
-        total_pagado_por_clave.rename(columns={'clave': 'clave'}, inplace=True)
+        # Ya tiene columna 'clave' (el índice del grupo se convierte en columna)
 
         # Combinar cargos y pagos
         resumen = primer_registro.merge(total_pagado_por_clave, on='clave', how='left')
