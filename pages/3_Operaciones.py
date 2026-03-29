@@ -1,4 +1,76 @@
-import streamlit as st
+import streamlit as st# ... [código existente] ...
+
+# ========== CREAR PESTAÑAS ==========
+tab1, tab2, tab3 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres", "📊 Reporte"])
+
+# ====================== TAB 1: DETALLE POR DEPARTAMENTO ======================
+with tab1:
+    # ... [código existente] ...
+
+# ====================== TAB 2: RESUMEN POR TORRES ======================
+with tab2:
+    # ... [código existente] ...
+
+# ====================== TAB 3: REPORTE ======================
+with tab3:
+    st.subheader("📊 Reporte de Estado de Cuentas")
+
+    if not st.session_state.datos_cargados or st.session_state.df_final is None:
+        st.info("Primero genera los datos en la pestaña 'Detalle por Departamento'.")
+    else:
+        # ... [código existente] ...
+
+        # ---------- TOTALES GENERALES ----------
+        total_prog_gral = resumen['total_programacion'].sum()
+        total_deuda_gral = resumen['total_deuda'].sum()
+        total_pag_gral = resumen['total_pagado'].sum()
+        total_saldo_gral = resumen['saldo_a_pagar'].sum()
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("💰 Total Programación", f"S/ {total_prog_gral:,.2f}")
+        with col2:
+            st.metric("📊 Total Deuda", f"S/ {total_deuda_gral:,.2f}")
+        with col3:
+            st.metric("💸 Total Pagado", f"S/ {total_pag_gral:,.2f}")
+        with col4:
+            st.metric("🏦 Total Saldo a Pagar", f"S/ {total_saldo_gral:,.2f}")
+        st.markdown("---")
+
+        # Buscador
+        busqueda = st.text_input("Buscar por código o nombre", placeholder="Ej. 01101 o nombre")
+        if busqueda:
+            mask = (resumen_final['CÓDIGO'].astype(str).str.contains(busqueda, case=False, na=False) |
+                    resumen_final['APELLIDOS Y NOMBRES'].astype(str).str.contains(busqueda, case=False, na=False))
+            resumen_final = resumen_final[mask].copy()
+            if resumen_final.empty:
+                st.warning("No se encontraron resultados.")
+
+        # Mostrar tabla
+        st.dataframe(resumen_final, use_container_width=True, height=600)
+
+        # Subtotales por torre
+        st.subheader("Subtotales por Torre")
+        subtotales = resumen_final.groupby('TORRE')[['TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']].agg(
+            lambda x: sum(limpiar_numero(v) for v in x)
+        ).reset_index()
+        for col in ['TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']:
+            subtotales[col] = subtotales[col].apply(lambda x: f"{x:,.2f}")
+        st.dataframe(subtotales, use_container_width=True)
+
+        # Descarga a Excel
+        import io
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            resumen_final.to_excel(writer, index=False, sheet_name=f"Resumen_Torres_{st.session_state.mes_actual}_{st.session_state.anio_actual}")
+            subtotales.to_excel(writer, index=False, sheet_name="Subtotales")
+        excel_data = output.getvalue()
+        st.download_button(
+            label="📥 Descargar Reporte en Excel",
+            data=excel_data,
+            file_name=f"Resumen_Torres_{st.session_state.mes_actual}_{st.session_state.anio_actual}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 import pandas as pd
 import gsheets
 from datetime import datetime
