@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import gsheetsfrom datetime import datetime
@@ -95,9 +96,7 @@ with tab3:
         # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO ----------
         df_resumen['torre'] = pd.to_numeric(df_resumen['torre'], errors='coerce')
         df_resumen['departamento'] = pd.to_numeric(df_resumen['departamento'], errors='coerce')
-        # Fill missing values with 0 and convert to int to avoid dropping rows
-        df_resumen['torre'] = df_resumen['torre'].fillna(0).astype(int)
-        df_resumen['departamento'] = df_resumen['departamento'].fillna(0).astype(int)
+        df_resumen = df_resumen.dropna(subset=['torre', 'departamento'])
 
         df_resumen['clave'] = df_resumen['torre'].astype(str) + '_' + df_resumen['departamento'].astype(str)
         grupo = df_resumen.groupby('clave')
