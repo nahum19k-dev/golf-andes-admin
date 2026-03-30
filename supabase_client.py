@@ -11,11 +11,6 @@ def get_supabase() -> Client:
     return create_client(url, key)
 
 # ====================== FUNCIÓN AUXILIAR ======================
-def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
-    """Limpia nombres de columnas: espacios, mayúsculas, caracteres extraños."""
-    df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
-    return df
-
 def limpiar_nan_para_json(df: pd.DataFrame) -> pd.DataFrame:
     """
     Reemplaza NaN por None (que se convierte a null en JSON) en DataFrames.
@@ -29,13 +24,20 @@ def limpiar_nan_para_json(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].fillna('')
     return df
 
+def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Solo limpia espacios al inicio/final, sin cambiar mayúsculas.
+    """
+    df.columns = df.columns.str.strip()
+    return df
+
 # ====================== PROPIETARIOS ======================
 def leer_propietarios() -> pd.DataFrame:
     supabase = get_supabase()
     response = supabase.table('propietarios').select('*').execute()
     if response.data:
         df = pd.DataFrame(response.data)
-        df = limpiar_columnas(df)
+        df = limpiar_nombres_columnas(df)
         columnas_esperadas = ['id', 'codigo', 'torre', 'dpto', 'dni', 'nombre', 'celular', 'correo', 'situacion', 'direccion']
         for col in columnas_esperadas:
             if col not in df.columns:
@@ -106,7 +108,7 @@ def leer_hoja_programacion(nombre_hoja):
     response = supabase.table('programacion').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_columnas(df)
+        df = limpiar_nombres_columnas(df)  # solo quita espacios
         return df
     return pd.DataFrame()
 
@@ -149,7 +151,7 @@ def leer_hoja_pagos(nombre_hoja):
     response = supabase.table('pagos').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_columnas(df)
+        df = limpiar_nombres_columnas(df)
         return df
     return pd.DataFrame()
 
@@ -158,7 +160,7 @@ def leer_pagos_mes(mes: str, anio: int):
     response = supabase.table('pagos').select('datos').eq('mes', mes).eq('anio', anio).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_columnas(df)
+        df = limpiar_nombres_columnas(df)
         rename_map = {
             'fecha': 'fecha',
             'torre': 'torre',
@@ -217,7 +219,7 @@ def leer_hoja_medidor(nombre_hoja):
     response = supabase.table('medidores').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_columnas(df)
+        df = limpiar_nombres_columnas(df)
         return df
     return pd.DataFrame()
 
@@ -260,7 +262,7 @@ def leer_hoja_amortizacion(nombre_hoja):
     response = supabase.table('amortizacion').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_columnas(df)
+        df = limpiar_nombres_columnas(df)
         return df
     return pd.DataFrame()
 
@@ -303,7 +305,7 @@ def leer_hoja_otros(nombre_hoja):
     response = supabase.table('otros').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_columnas(df)
+        df = limpiar_nombres_columnas(df)
         return df
     return pd.DataFrame()
 
@@ -335,7 +337,7 @@ def leer_hoja_deuda(nombre_hoja):
     response = supabase.table('deuda_inicial').select('datos').eq('anio', anio).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_columnas(df)
+        df = limpiar_nombres_columnas(df)
         return df
     return pd.DataFrame()
 
@@ -399,6 +401,7 @@ def leer_programacion(mes: str, anio: int):
     df = leer_hoja_programacion(nombre_hoja)
     if df.empty:
         return df
+    # Convertir a numérico las columnas que corresponden
     for col in ['torre', 'departamento', 'Mantenimiento']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
