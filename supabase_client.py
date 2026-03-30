@@ -370,3 +370,32 @@ def leer_deuda_inicial(anio: int):
             st.info(f"Usando deuda del año anterior ({anio-1}) porque no se encontró para {anio}.")
             return df_ant
     return df
+    # ====================== CONTROL DE CÓDIGOS (para generar DNIs automáticos) ======================
+def obtener_ultimo_codigo() -> int:
+    """
+    Obtiene el último código generado sin incrementarlo.
+    """
+    supabase = get_supabase()
+    response = supabase.table('control_codigos').select('ultimo_codigo').execute()
+    if response.data:
+        return response.data[0]['ultimo_codigo']
+    else:
+        # Si no existe, insertar 0 y devolver 0
+        supabase.table('control_codigos').insert({'ultimo_codigo': 0}).execute()
+        return 0
+
+def obtener_siguiente_codigo() -> int:
+    """
+    Incrementa el contador y devuelve el nuevo valor.
+    """
+    supabase = get_supabase()
+    response = supabase.table('control_codigos').select('id', 'ultimo_codigo').execute()
+    if response.data:
+        registro = response.data[0]
+        nuevo = registro['ultimo_codigo'] + 1
+        supabase.table('control_codigos').update({'ultimo_codigo': nuevo}).eq('id', registro['id']).execute()
+        return nuevo
+    else:
+        # No existe registro, insertar 1 y devolver 1
+        supabase.table('control_codigos').insert({'ultimo_codigo': 1}).execute()
+        return 1
