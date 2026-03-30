@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import gsheets
+import supabase_client
 import gspread
 from datetime import datetime, timedelta
 
