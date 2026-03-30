@@ -10,10 +10,23 @@ def get_supabase() -> Client:
     key = st.secrets["supabase"]["key"]
     return create_client(url, key)
 
-# ====================== FUNCIÓN AUXILIAR PARA LIMPIAR NOMBRES DE COLUMNAS ======================
+# ====================== FUNCIÓN AUXILIAR ======================
 def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
     """Limpia nombres de columnas: espacios, mayúsculas, caracteres extraños."""
     df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
+    return df
+
+def limpiar_nan_para_json(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Reemplaza NaN por None (que se convierte a null en JSON) en DataFrames.
+    También convierte valores numéricos infinitos a 0.
+    """
+    df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == 'float64':
+            df[col] = df[col].fillna(0)
+        elif df[col].dtype == 'object':
+            df[col] = df[col].fillna('')
     return df
 
 # ====================== PROPIETARIOS ======================
@@ -23,7 +36,6 @@ def leer_propietarios() -> pd.DataFrame:
     if response.data:
         df = pd.DataFrame(response.data)
         df = limpiar_columnas(df)
-        # Conservar la columna 'id' (necesaria para eliminar registros)
         columnas_esperadas = ['id', 'codigo', 'torre', 'dpto', 'dni', 'nombre', 'celular', 'correo', 'situacion', 'direccion']
         for col in columnas_esperadas:
             if col not in df.columns:
@@ -36,20 +48,13 @@ def leer_propietarios() -> pd.DataFrame:
 
 def subir_excel_a_sheets(df: pd.DataFrame) -> int:
     supabase = get_supabase()
-    # Borrar todos los registros existentes
     supabase.table('propietarios').delete().neq('id', 0).execute()
-    # Limpiar nombres de columnas en el DataFrame antes de insertar
-    df_clean = df.copy()
-    df_clean.columns = df_clean.columns.str.strip().str.lower()
+    df_clean = limpiar_nan_para_json(df)
     records = df_clean.to_dict(orient='records')
     response = supabase.table('propietarios').insert(records).execute()
     return len(response.data)
 
 def agregar_propietario(registro: dict) -> bool:
-    """
-    Inserta un nuevo propietario en la tabla 'propietarios'.
-    Devuelve True si se insertó correctamente.
-    """
     supabase = get_supabase()
     try:
         supabase.table('propietarios').insert(registro).execute()
@@ -59,10 +64,6 @@ def agregar_propietario(registro: dict) -> bool:
         return False
 
 def eliminar_propietario_por_id(record_id: int) -> bool:
-    """
-    Elimina un propietario por su ID.
-    Devuelve True si se eliminó correctamente.
-    """
     supabase = get_supabase()
     try:
         supabase.table('propietarios').delete().eq('id', record_id).execute()
@@ -83,7 +84,8 @@ def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, a
     if existe_programacion(periodo_key):
         raise ValueError(f"La hoja '{nombre_hoja}' ya existe.")
     supabase = get_supabase()
-    datos = df.to_dict(orient='records')
+    df_clean = limpiar_nan_para_json(df)
+    datos = df_clean.to_dict(orient='records')
     supabase.table('programacion').insert({
         'nombre_hoja': nombre_hoja,
         'mes': mes,
@@ -125,7 +127,8 @@ def guardar_pagos(df: pd.DataFrame, mes: str, anio: int) -> str:
     else:
         nombre_hoja = nombre_base
 
-    datos = df.to_dict(orient='records')
+    df_clean = limpiar_nan_para_json(df)
+    datos = df_clean.to_dict(orient='records')
     supabase.table('pagos').insert({
         'nombre_hoja': nombre_hoja,
         'mes': mes,
@@ -192,7 +195,8 @@ def guardar_medidor(df: pd.DataFrame, mes: str, anio: int) -> str:
     else:
         nombre_hoja = nombre_base
 
-    datos = df.to_dict(orient='records')
+    df_clean = limpiar_nan_para_json(df)
+    datos = df_clean.to_dict(orient='records')
     supabase.table('medidores').insert({
         'nombre_hoja': nombre_hoja,
         'mes': mes,
@@ -234,7 +238,8 @@ def guardar_amortizacion(df: pd.DataFrame, mes: str, anio: int) -> str:
     else:
         nombre_hoja = nombre_base
 
-    datos = df.to_dict(orient='records')
+    df_clean = limpiar_nan_para_json(df)
+    datos = df_clean.to_dict(orient='records')
     supabase.table('amortizacion').insert({
         'nombre_hoja': nombre_hoja,
         'mes': mes,
@@ -276,7 +281,8 @@ def guardar_otros(df: pd.DataFrame, mes: str, anio: int) -> str:
     else:
         nombre_hoja = nombre_base
 
-    datos = df.to_dict(orient='records')
+    df_clean = limpiar_nan_para_json(df)
+    datos = df_clean.to_dict(orient='records')
     supabase.table('otros').insert({
         'nombre_hoja': nombre_hoja,
         'mes': mes,
@@ -305,7 +311,8 @@ def leer_hoja_otros(nombre_hoja):
 def guardar_deuda_inicial(df: pd.DataFrame, anio: int) -> str:
     supabase = get_supabase()
     supabase.table('deuda_inicial').delete().eq('anio', anio).execute()
-    datos = df.to_dict(orient='records')
+    df_clean = limpiar_nan_para_json(df)
+    datos = df_clean.to_dict(orient='records')
     supabase.table('deuda_inicial').insert({
         'anio': anio,
         'datos': datos
@@ -428,7 +435,7 @@ def leer_deuda_inicial(anio: int):
             return df_ant
     return df
 
-# ====================== CONTROL DE CÓDIGOS (para generar DNIs automáticos) ======================
+# ====================== CONTROL DE CÓDIGOS ======================
 def obtener_ultimo_codigo() -> int:
     supabase = get_supabase()
     response = supabase.table('control_codigos').select('ultimo_codigo').execute()
