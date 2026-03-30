@@ -205,7 +205,7 @@ def guardar_pagos(df: pd.DataFrame, mes: str, anio: int):
             )
     df_para_guardar = df_para_guardar.astype(str).fillna("")
     datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
-    nueva_hoja.update(datos, value_input_option="RAW")
+    nueva_hoja.update("A1", datos, value_input_option="RAW")
     return nombre_hoja
 
 def listar_hojas_pagos():
@@ -342,7 +342,7 @@ def guardar_amortizacion(df: pd.DataFrame, mes: str, anio: int):
             )
     df_para_guardar = df_para_guardar.astype(str).fillna("")
     datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
-    nueva_hoja.update(datos, value_input_option="RAW")
+    nueva_hoja.update("A1", datos, value_input_option="RAW")
     return nombre_hoja
 
 def listar_hojas_amortizacion():
@@ -388,7 +388,7 @@ def guardar_deuda_inicial(df: pd.DataFrame, anio: int):
             )
     df_para_guardar = df_para_guardar.astype(str).fillna("")
     datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
-    nueva_hoja.update(datos, value_input_option="RAW")
+    nueva_hoja.update("A1", datos, value_input_option="RAW")
     return nombre_hoja
 
 def listar_hojas_deuda():
