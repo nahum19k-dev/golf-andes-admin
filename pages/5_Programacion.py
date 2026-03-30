@@ -24,18 +24,26 @@ def validar_mes_vencimiento(mes_seleccionado: str, fecha_vencimiento):
 def formatear_campos_estandar(df):
     """
     Aplica formato estándar a las columnas:
-    - torre: 2 dígitos (relleno con cero a la izquierda)
-    - codigo: 5 dígitos
-    - dni: 8 dígitos si es numérico y tiene menos de 8; 11 dígitos (RUC) se deja igual
+    - torre: 2 dígitos (relleno con cero a la izquierda), elimina decimales
+    - codigo: 5 dígitos, elimina decimales
+    - dni: 8 dígitos si es numérico y tiene menos de 8; 11 dígitos (RUC) se deja igual, elimina decimales
     """
     df = df.copy()
+    for col in ['torre', 'codigo', 'dni']:
+        if col in df.columns:
+            # Convertir a string y eliminar parte decimal (ej. 1101.0 -> 1101)
+            df[col] = df[col].astype(str).str.replace(r'\.0$', '', regex=True)
+            # Limpiar espacios y 'nan'
+            df[col] = df[col].str.strip().replace('nan', '')
+
     if 'torre' in df.columns:
-        df['torre'] = df['torre'].astype(str).str.zfill(2)
+        df['torre'] = df['torre'].str.zfill(2)
     if 'codigo' in df.columns:
-        df['codigo'] = df['codigo'].astype(str).str.zfill(5)
+        df['codigo'] = df['codigo'].str.zfill(5)
     if 'dni' in df.columns:
         def format_dni(val):
-            val = str(val).strip()
+            if not val:
+                return val
             if val.isdigit():
                 if len(val) == 11:
                     return val
