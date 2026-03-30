@@ -15,7 +15,7 @@ st.markdown("""<style>
 st.title("🏠 Gestión de Propietarios y Deuda Inicial")
 
 # Crear pestañas principales
-tab1, tab2 = st.tabs(["📋 Propietarios", "💰 Deuda Inicial"])
+tab1, tab2, tab3 = st.tabs(["📋 Visualizar Propietarios", "📤 Subir Propietarios", "💰 Deuda Inicial"])
 
 # ====================== TAB 1: PROPIETARIOS (original) ======================
 with tab1:
