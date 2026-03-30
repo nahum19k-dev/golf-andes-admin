@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import gsheets
 from datetime import datetime
-import time
 
 st.set_page_config(page_title="Datos Propietarios", page_icon="📊", layout="wide")
 
@@ -18,182 +17,32 @@ st.title("🏠 Gestión de Propietarios y Deuda Inicial")
 # Crear pestañas principales
 tab1, tab2 = st.tabs(["📋 Propietarios", "💰 Deuda Inicial"])
 
-# ====================== TAB 1: PROPIETARIOS ======================
+# ====================== TAB 1: PROPIETARIOS (original) ======================
 with tab1:
-    # Sub-pestañas para propietarios
-    sub1, sub2 = st.tabs(["📤 Subir Propietarios", "📊 Visualizar Propietarios"])
+    @st.cache_data(ttl=60)
+    def cargar():
+        return gsheets.leer_propietarios()
 
-    # ---------- SUBTAB 1: SUBIR PROPIETARIOS ----------
-    with sub1:
-        st.info("""
-        **Formato esperado del archivo Excel/CSV:**
-        - Columnas requeridas: `TORRE`, `N°DPTO`, `CODIGO`, `DNI`, `NOMBRE`
-        - Si no se proporciona DNI, se generará automáticamente un código COD1, COD2, etc.
-        - La combinación Torre + N°DPTO + DNI/COD debe ser única
-        """)
-
-        uploaded_file = st.file_uploader("Elige el archivo Excel o CSV de propietarios",
-                                       type=["xlsx", "csv"],
-                                       key="propietarios_file")
-
-        if uploaded_file is not None:
-            try:
-                # Leer el archivo según su tipo
-                if uploaded_file.name.endswith('.csv'):
-                    df = pd.read_csv(uploaded_file, dtype=str)
-                else:
-                    df = pd.read_excel(uploaded_file, dtype=str)
-
-                # Limpiar nombres de columnas
-                df.columns = df.columns.str.strip().str.replace('\n', ' ')
-
-                # Mapeo flexible de columnas
-                col_mapping = {}
-                for col in df.columns:
-                    col_lower = col.lower()
-                    if 'torre' in col_lower:
-                        col_mapping['torre'] = col
-                    elif 'dpto' in col_lower or 'departamento' in col_lower or 'n°dpto' in col_lower:
-                        col_mapping['dpto'] = col
-                    elif 'codigo' in col_lower:
-                        col_mapping['codigo'] = col
-                    elif 'dni' in col_lower:
-                        col_mapping['dni'] = col
-                    elif 'nombre' in col_lower or 'apellido' in col_lower:
-                        col_mapping['nombre'] = col
-
-                # Verificar columnas requeridas
-                required_cols = ['torre', 'dpto', 'codigo', 'nombre']
-                missing_cols = [col for col in required_cols if col not in col_mapping]
-
-                if missing_cols:
-                    st.error(f"Faltan columnas requeridas: {missing_cols}")
-                    st.stop()
-
-                # Renombrar columnas
-                df_renamed = df[list(col_mapping.values())].copy()
-                df_renamed.columns = ['torre', 'dpto', 'codigo', 'nombre']
-
-                # Validar unicidad y generar COD si no hay DNI
-                duplicates = []
-                existing_data = []
-
-                try:
-                    # Obtener datos existentes
-                    existing = gsheets.leer_propietarios()
-                    if not existing.empty:
-                        # Filtrar columnas existentes
-                        existing = existing[['torre', 'dpto', 'dni', 'codigo']].copy()
-                        existing = existing.dropna(subset=['torre', 'dpto'])
-                        existing_data = existing
-                except:
-                    existing = pd.DataFrame()
-                    existing_data = []
-
-                # Procesar cada fila
-                new_rows = []
-                cod_counter = 1
-
-                for index, row in df_renamed.iterrows():
-                    torre = str(row['torre']).strip()
-                    dpto = str(row['dpto']).strip()
-                    nombre = str(row['nombre']).strip()
-                    codigo = str(row['codigo']).strip()
-                    dni = str(row.get('dni', '')).strip()
-
-                    # Si no hay DNI, generar COD
-                    if not dni:
-                        dni = f"COD{cod_counter}"
-                        cod_counter += 1
-
-                    # Validar combinación única
-                    if existing_data.empty:
-                        # No hay datos existentes
-                        new_row = row.to_dict()
-                        new_row['dni'] = dni
-                        new_rows.append(new_row)
-                    else:
-                        # Verificar duplicado
-                        duplicate_mask = (
-                            (existing_data['torre'].astype(str) == torre) &
-                            (existing_data['dpto'].astype(str) == dpto) &
-                            ((existing_data['dni'].astype(str) == dni) |
-                             (existing_data['codigo'].astype(str) == codigo))
-                        )
-
-                        if duplicate_mask.any():
-                            duplicates.append({
-                                'torre': torre,
-                                'dpto': dpto,
-                                'dni': dni,
-                                'codigo': codigo
-                            })
-                        else:
-                            new_row = row.to_dict()
-                            new_row['dni'] = dni
-                            new_rows.append(new_row)
-
-                # Mostrar resultados
-                st.success(f"✅ Procesado: {len(df_renamed)} filas")
-                st.warning(f"🚫 Duplicados detectados: {len(duplicates)}")
-
-                if duplicates:
-                    st.write("**Duplicados encontrados:**")
-                    dup_df = pd.DataFrame(duplicates)
-                    st.dataframe(dup_df, use_container_width=True)
-
-                if new_rows:
-                    # Vista previa
-                    st.write(f"Filas válidas para subir: {len(new_rows)}")
-                    df_preview = pd.DataFrame(new_rows)
-                    st.dataframe(df_preview.head(10), use_container_width=True)
-
-                    if st.button("Guardar Propietarios en Google Sheets", type="primary"):
-                        with st.spinner("Guardando..."):
-                            try:
-                                # Preparar datos para subir
-                                df_upload = pd.DataFrame(new_rows)
-                                df_upload = df_upload.fillna("")
-
-                                # Usar función de gsheets para subir
-                                # Primero limpiar cache y luego subir
-                                gsheets.subir_excel_a_sheets(df_upload)
-
-                                st.success(f"¡{len(new_rows)} propietarios guardados correctamente!")
-                                # Forzar recarga de la página
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error al guardar: {e}")
-
-            except Exception as e:
-                st.error(f"Error al procesar el archivo: {e}")
-
-    # ---------- SUBTAB 2: VISUALIZAR PROPIETARIOS ----------
-    with sub2:
-        @st.cache_data(ttl=60)
-        def cargar():
-            return gsheets.leer_propietarios()
-
-        try:
-            df = cargar()
-            st.markdown("### Datos Propietarios")
-            filtro = st.text_input("Filtrar (DNI, nombre, código, torre):")
-            if filtro:
-                mask = (df["dni"].astype(str).str.contains(filtro, case=False, na=False) |
-                        df["nombre"].astype(str).str.contains(filtro, case=False, na=False) |
-                        df["codigo"].astype(str).str.contains(filtro, case=False, na=False) |
-                        df["torre"].astype(str).str.contains(filtro, case=False, na=False))
-                mostrar = df[mask]
-            else:
-                mostrar = df
-            st.markdown("Mostrando **" + str(len(mostrar)) + "** propietarios")
-            tabla = mostrar[["codigo","torre","dpto","dni","nombre","celular","correo","situacion"]].copy()
-            tabla.columns = ["Código","Torre","N° Dpto","DNI","Nombres y Apellidos","Celular","Correo","Situación"]
-            st.dataframe(tabla.reset_index(drop=True), use_container_width=True, hide_index=True, height=500)
-            csv = tabla.to_csv(index=False).encode("utf-8")
-            st.download_button("Descargar CSV", csv, "propietarios.csv", "text/csv")
-        except Exception as e:
-            st.error(f"Error conectando con Google Sheets: {e}")
+    try:
+        df = cargar()
+        st.markdown("### Datos Propietarios")
+        filtro = st.text_input("Filtrar (DNI, nombre, código, torre):")
+        if filtro:
+            mask = (df["dni"].astype(str).str.contains(filtro, case=False, na=False) |
+                    df["nombre"].astype(str).str.contains(filtro, case=False, na=False) |
+                    df["codigo"].astype(str).str.contains(filtro, case=False, na=False) |
+                    df["torre"].astype(str).str.contains(filtro, case=False, na=False))
+            mostrar = df[mask]
+        else:
+            mostrar = df
+        st.markdown("Mostrando **" + str(len(mostrar)) + "** propietarios")
+        tabla = mostrar[["codigo","torre","dpto","dni","nombre","celular","correo","situacion"]].copy()
+        tabla.columns = ["Código","Torre","N° Dpto","DNI","Nombres y Apellidos","Celular","Correo","Situación"]
+        st.dataframe(tabla.reset_index(drop=True), use_container_width=True, hide_index=True, height=500)
+        csv = tabla.to_csv(index=False).encode("utf-8")
+        st.download_button("Descargar CSV", csv, "propietarios.csv", "text/csv")
+    except Exception as e:
+        st.error(f"Error conectando con Google Sheets: {e}")
 
 # ====================== TAB 2: DEUDA INICIAL ======================
 with tab2:
