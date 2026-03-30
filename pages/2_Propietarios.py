@@ -35,12 +35,10 @@ with tab1:
         else:
             mostrar = df.copy()
 
-        # Limpiar valores no deseados
+        # Limpiar NaN y la cadena literal "nan"
         mostrar = mostrar.fillna('')
-        # Reemplazar la cadena literal "nan" (puede venir de archivos CSV) - sin usar argumento 'case'
-        mostrar = mostrar.replace(r'^nan$', '', regex=True, case=False)  # case=False funciona con regex?
-        # En versiones modernas de pandas, case no es válido. Usamos r'(?i)^nan$' para ignorar mayúsculas.
-        mostrar = mostrar.replace(r'(?i)^nan$', '', regex=True)
+        # Reemplazar la cadena literal "nan" (independientemente de mayúsculas)
+        mostrar = mostrar.applymap(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
 
         st.markdown(f"Mostrando **{len(mostrar)}** propietarios")
         tabla = mostrar[["codigo","torre","dpto","dni","nombre","celular","correo","situacion"]].copy()
@@ -223,7 +221,8 @@ with tab2:
             # Mostrar resumen
             st.success(f"✅ {len(nuevas_filas)} registro(s) listo(s) para subir.")
             df_preview = pd.DataFrame(nuevas_filas).fillna('')
-            df_preview = df_preview.replace(r'(?i)^nan$', '', regex=True)
+            # Limpiar la cadena "nan"
+            df_preview = df_preview.applymap(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
             st.write("Vista previa:")
             st.dataframe(df_preview, use_container_width=True)
 
@@ -320,9 +319,9 @@ with tab3:
                 else:
                     total_formateado = "No disponible"
 
-                # Limpiar valores no deseados
+                # Limpiar NaN y la cadena literal "nan"
                 df_deuda = df_deuda.fillna('')
-                df_deuda = df_deuda.replace(r'(?i)^nan$', '', regex=True)
+                df_deuda = df_deuda.applymap(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
 
                 def formatear_numero(valor):
                     try:
