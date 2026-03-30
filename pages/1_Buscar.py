@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from gsheets import get_sheet, leer_propietarios
+from supabase_client import get_sheet, leer_propietarios
 
 st.set_page_config(page_title="Buscar Propietario", page_icon="🔍", layout="wide")
 
