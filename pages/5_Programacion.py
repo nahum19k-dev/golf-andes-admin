@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import supabase_client as gsheets  # alias para mantener compatibilidad
+import supabase_client as gsheets
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Programación", page_icon="📅", layout="wide")
@@ -20,6 +20,32 @@ def validar_mes_vencimiento(mes_seleccionado: str, fecha_vencimiento):
     if mes_seleccionado != mes_real:
         return False, mes_real
     return True, mes_real
+
+def formatear_campos_estandar(df):
+    """
+    Aplica formato estándar a las columnas:
+    - torre: 2 dígitos (relleno con cero a la izquierda)
+    - codigo: 5 dígitos
+    - dni: 8 dígitos si es numérico y tiene menos de 8; 11 dígitos (RUC) se deja igual
+    """
+    df = df.copy()
+    if 'torre' in df.columns:
+        df['torre'] = df['torre'].astype(str).str.zfill(2)
+    if 'codigo' in df.columns:
+        df['codigo'] = df['codigo'].astype(str).str.zfill(5)
+    if 'dni' in df.columns:
+        def format_dni(val):
+            val = str(val).strip()
+            if val.isdigit():
+                if len(val) == 11:
+                    return val
+                elif len(val) < 8:
+                    return val.zfill(8)
+                else:
+                    return val
+            return val
+        df['dni'] = df['dni'].apply(format_dni)
+    return df
 
 # Crear pestañas principales
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Programación Mantenimiento", "💧 Medidores", "💰 Amortización", "📌 Otros"])
@@ -241,6 +267,9 @@ with tab1:
                 else:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
 
+                # Aplicar formato estándar a torre, código y DNI
+                df_mostrar = formatear_campos_estandar(df_mostrar)
+
                 # Formatear números
                 def formatear_numero(valor):
                     try:
@@ -285,7 +314,6 @@ with tab1:
                     except:
                         return 0.0
 
-                # Calcular total solo si la columna existe
                 if 'MANTENIMIENTO (S/)' in df_viz.columns:
                     total_mantenimiento = df_viz['MANTENIMIENTO (S/)'].apply(extraer_numero).sum()
                 else:
@@ -528,6 +556,9 @@ with tab2:
             df_guardado = gsheets.leer_hoja_medidor(hoja_seleccionada)
 
             if not df_guardado.empty:
+                # Aplicar formato estándar a torre, código y DNI
+                df_guardado = formatear_campos_estandar(df_guardado)
+
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -716,6 +747,9 @@ with tab3:
             df_guardado = gsheets.leer_hoja_amortizacion(hoja_seleccionada)
 
             if not df_guardado.empty:
+                # Aplicar formato estándar a torre, código y DNI (si existen)
+                df_guardado = formatear_campos_estandar(df_guardado)
+
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -935,7 +969,6 @@ with tab4:
                 st.error(f"❌ El mes seleccionado ({mes_otros}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
             else:
                 nombre_hoja = f"Otros {mes_real} {fecha_vencimiento.year}"
-                # Verificar si ya existe una programación con ese nombre
                 hojas_existentes = gsheets.listar_hojas_otros()
                 existe = nombre_hoja in hojas_existentes
 
@@ -970,6 +1003,9 @@ with tab4:
             df_guardado = gsheets.leer_hoja_otros(hoja_seleccionada)
 
             if not df_guardado.empty:
+                # Aplicar formato estándar a torre, código y DNI
+                df_guardado = formatear_campos_estandar(df_guardado)
+
                 prop = gsheets.leer_propietarios()
                 if not prop.empty and 'nombre' not in df_guardado.columns:
                     col_torre_prop = None
