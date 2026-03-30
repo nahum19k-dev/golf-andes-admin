@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import supabase_client
+import supabase_client as gsheets   # <--- AHORA USAMOS EL ALIAS gsheets (para que el resto del código no se rompa)
 from datetime import datetime
 
 st.set_page_config(page_title="Datos Propietarios", page_icon="📊", layout="wide")
@@ -37,7 +37,6 @@ with tab1:
 
         # Limpiar NaN y la cadena literal "nan"
         mostrar = mostrar.fillna('')
-        # Reemplazar la cadena literal "nan" (independientemente de mayúsculas)
         mostrar = mostrar.applymap(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
 
         st.markdown(f"Mostrando **{len(mostrar)}** propietarios")
@@ -47,7 +46,7 @@ with tab1:
         csv = tabla.to_csv(index=False).encode("utf-8")
         st.download_button("Descargar CSV", csv, "propietarios.csv", "text/csv")
     except Exception as e:
-        st.error(f"Error conectando con Google Sheets: {e}")
+        st.error(f"Error conectando con Supabase: {e}")
 
 # ====================== TAB 2: SUBIR PROPIETARIOS ======================
 with tab2:
@@ -164,7 +163,7 @@ with tab2:
                 st.dataframe(duplicados_internos[['torre','dpto','codigo','nombre']], use_container_width=True)
                 st.stop()
 
-            # --- VALIDACIÓN CONTRA DATOS EXISTENTES ---
+            # --- VALIDACIÓN CONTRA DATOS EXISTENTES (usando Supabase) ---
             try:
                 existing = gsheets.leer_propietarios()
                 if not existing.empty:
@@ -177,28 +176,23 @@ with tab2:
                         duplicados_exist = existing[existing['key'].isin(claves_dup)][['torre','dpto','codigo','dni','nombre']]
                         st.dataframe(duplicados_exist, use_container_width=True)
                         st.stop()
-            except:
+            except Exception as e:
+                # Si no se pudo conectar o no hay datos previos, continuamos
                 pass
 
-            # --- GENERAR DNI AUTOMÁTICO SI NO TIENE ---
-            try:
-                spreadsheet = gsheets.get_spreadsheet()
-                try:
-                    control = spreadsheet.worksheet("Control_Codigos")
-                    last_val = control.cell(1, 1).value
-                    cod_counter = int(last_val) if last_val else 0
-                except:
-                    control = spreadsheet.add_worksheet(title="Control_Codigos", rows=10, cols=5)
-                    control.update_cell(1, 1, "0")
-                    cod_counter = 0
-            except:
-                cod_counter = 0
+            # --- GENERAR DNI AUTOMÁTICO SI NO TIENE (usando Supabase) ---
+            # Obtener el último código generado
+            ultimo_codigo = gsheets.obtener_ultimo_codigo()
+            cod_counter = ultimo_codigo
 
             nuevas_filas = []
             for _, fila in df.iterrows():
                 dni = str(fila['dni']).strip()
                 if not dni or dni.lower() == 'nan':
                     cod_counter += 1
+                    # Actualizar el contador en Supabase después de cada uso (o al final)
+                    # Para simplificar, lo actualizaremos al final, pero si se quiere por cada registro, se puede.
+                    # En este bucle, solo calculamos, luego actualizaremos al final.
                     dni = f"COD{cod_counter}"
                 nuevas_filas.append({
                     'torre': fila['torre'],
@@ -212,11 +206,21 @@ with tab2:
                     'direccion': fila.get('direccion', '')
                 })
 
-            if cod_counter > 0:
-                try:
-                    control.update_cell(1, 1, str(cod_counter))
-                except:
-                    pass
+            # Si se generaron nuevos códigos, actualizar el contador en Supabase
+            if cod_counter > ultimo_codigo:
+                # Para mantener consistencia, actualizamos al último valor usado
+                # Primero debemos obtener el contador actual y sumar la cantidad de nuevos códigos generados
+                # Pero como usamos cod_counter como acumulador, simplemente actualizamos con ese valor.
+                # Nota: en Supabase, la función obtener_siguiente_codigo() ya incrementa y devuelve,
+                # pero aquí estamos haciendo el bucle manualmente. Para evitar múltiples llamadas,
+                # podemos hacer una sola actualización al final con el nuevo valor.
+                # Como no tenemos una función "actualizar_codigo(valor)", creamos una:
+                supabase = gsheets.get_supabase()
+                response = supabase.table('control_codigos').select('id').execute()
+                if response.data:
+                    supabase.table('control_codigos').update({'ultimo_codigo': cod_counter}).eq('id', response.data[0]['id']).execute()
+                else:
+                    supabase.table('control_codigos').insert({'ultimo_codigo': cod_counter}).execute()
 
             # Mostrar resumen
             st.success(f"✅ {len(nuevas_filas)} registro(s) listo(s) para subir.")
@@ -226,7 +230,7 @@ with tab2:
             st.write("Vista previa:")
             st.dataframe(df_preview, use_container_width=True)
 
-            if st.button("💾 Guardar en Google Sheets", type="primary"):
+            if st.button("💾 Guardar en Supabase", type="primary"):
                 with st.spinner("Guardando..."):
                     try:
                         df_upload = pd.DataFrame(nuevas_filas).fillna("")
@@ -288,7 +292,7 @@ with tab3:
                 st.write("Vista previa (primeras 10 filas):")
                 st.dataframe(df_vista.head(10), use_container_width=True)
 
-                if st.button("Guardar Deuda en Google Sheets", type="primary", key="guardar_deuda"):
+                if st.button("Guardar Deuda en Supabase", type="primary", key="guardar_deuda"):
                     with st.spinner("Guardando..."):
                         try:
                             nombre_hoja = gsheets.guardar_deuda_inicial(df, int(anio_deuda))
@@ -303,7 +307,7 @@ with tab3:
         try:
             hojas_deuda = gsheets.listar_hojas_deuda()
         except Exception as e:
-            st.error(f"No se pudo conectar con Google Sheets: {e}")
+            st.error(f"No se pudo conectar con Supabase: {e}")
             hojas_deuda = []
 
         if hojas_deuda:
