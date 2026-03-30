@@ -876,6 +876,7 @@ with tab3:
 with tab4:
     subtab1, subtab2 = st.tabs(["📤 Subir y Procesar", "📊 Visualizar Otros"])
 
+    # ---------- SUBTAB 1: SUBIR Y PROCESAR ----------
     with subtab1:
         col1, col2 = st.columns(2)
         with col1:
@@ -912,6 +913,7 @@ with tab4:
             - GARANTIA
             - SALA ZOOM
             - ALQUILER DE SILLAS
+            - TUBERIAS (opcional)
 
             La primera fila debe ser los encabezados.
             """)
@@ -922,23 +924,27 @@ with tab4:
 
         if uploaded_file_otros is not None:
             try:
+                # Leer archivo asumiendo encabezados en primera fila
                 df = pd.read_excel(uploaded_file_otros, sheet_name=0, header=0)
                 df.columns = df.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
                 df = df.dropna(axis=1, how='all')
                 df = df.dropna(how='all')
 
+                # Buscar las columnas necesarias
                 col_torre = None
                 col_dpto = None
                 col_codigo = None
                 col_dni = None
                 col_nombre = None
 
+                # Columnas de montos (conceptos) - incluimos TUBERIAS por si viene en el archivo
                 conceptos = {
                     'CUOTA_EXTRAORDINARIAS': ['extraordinarias', 'cuota extraordinaria', 'extra'],
                     'ALQUILER_PARRILLA': ['parrilla', 'alquiler parrilla'],
                     'GARANTIA': ['garantia', 'garantía'],
                     'SALA_ZOOM': ['sala zoom', 'zoom'],
-                    'ALQUILER_SILLAS': ['sillas', 'alquiler de sillas']
+                    'ALQUILER_SILLAS': ['sillas', 'alquiler de sillas'],
+                    'TUBERIAS': ['tuberias', 'tuberías']
                 }
                 columnas_montos = {k: None for k in conceptos.keys()}
 
@@ -964,19 +970,23 @@ with tab4:
                     st.error("No se encontraron las columnas necesarias: TORRE y N°DPTO. Verifica el archivo.")
                     st.stop()
 
+                # Si no se encontró ninguna columna de monto, mostrar advertencia
                 if all(v is None for v in columnas_montos.values()):
                     st.warning("No se detectaron columnas de ingresos extraordinarios. Se creará un registro vacío.")
 
+                # Seleccionar y renombrar columnas
                 df_seleccionado = pd.DataFrame()
                 df_seleccionado['torre'] = df[col_torre]
                 df_seleccionado['departamento'] = df[col_dpto]
 
+                # Añadir columnas de montos (si no existen, se asignan 0)
                 for key, col_monto in columnas_montos.items():
                     if col_monto is not None:
                         df_seleccionado[key] = df[col_monto]
                     else:
                         df_seleccionado[key] = 0
 
+                # Añadir columnas opcionales
                 if col_codigo:
                     df_seleccionado['codigo'] = df[col_codigo]
                 if col_dni:
@@ -984,43 +994,97 @@ with tab4:
                 if col_nombre:
                     df_seleccionado['nombre'] = df[col_nombre]
 
+                # Convertir columnas numéricas
                 df_seleccionado['torre'] = pd.to_numeric(df_seleccionado['torre'], errors='coerce')
                 df_seleccionado['departamento'] = pd.to_numeric(df_seleccionado['departamento'], errors='coerce')
                 for key in conceptos.keys():
                     df_seleccionado[key] = pd.to_numeric(df_seleccionado[key], errors='coerce')
 
+                # Eliminar filas sin torre o departamento
                 df_seleccionado = df_seleccionado.dropna(subset=['torre', 'departamento'])
 
+                # Rellenar NaN con 0 para columnas de montos
                 for key in conceptos.keys():
                     df_seleccionado[key] = df_seleccionado[key].fillna(0)
 
-                st.success(f"Archivo leído: {len(df_seleccionado)} filas")
+                # ================== VALIDACIONES PREVIAS (igual que en mantenimiento) ==================
+                # Aplicar formato estándar a torre, código y DNI
+                df_seleccionado = formatear_campos_estandar(df_seleccionado)
 
-                columnas_orden_deseado = [
-                    'torre', 'departamento', 'codigo', 'dni', 'nombre',
-                    'CUOTA_EXTRAORDINARIAS', 'ALQUILER_PARRILLA', 'GARANTIA', 'SALA_ZOOM', 'ALQUILER_SILLAS'
-                ]
-                columnas_existentes = [col for col in columnas_orden_deseado if col in df_seleccionado.columns]
-                df_mostrar = df_seleccionado[columnas_existentes].copy()
+                # Crear código a partir de torre+departamento si no existe columna 'codigo'
+                if 'codigo' not in df_seleccionado.columns:
+                    df_seleccionado['codigo'] = df_seleccionado['torre'].astype(str).str.zfill(2) + df_seleccionado['departamento'].astype(str).str.zfill(3)
+                # Asegurar que la columna dni exista (si no, crear vacía)
+                if 'dni' not in df_seleccionado.columns:
+                    df_seleccionado['dni'] = ""
+
+                # Limpiar valores NaN en codigo y dni
+                df_seleccionado['codigo'] = df_seleccionado['codigo'].astype(str).str.strip().replace('nan', '')
+                df_seleccionado['dni'] = df_seleccionado['dni'].astype(str).str.strip().replace('nan', '')
+
+                # Validación de unicidad (código + dni)
+                df_seleccionado['clave_unica'] = df_seleccionado['codigo'] + '_' + df_seleccionado['dni']
+                duplicados = df_seleccionado[df_seleccionado.duplicated(subset=['clave_unica'], keep=False)]
+                if not duplicados.empty:
+                    st.error("❌ Se encontraron registros duplicados (mismo código + DNI) en el archivo:")
+                    st.dataframe(duplicados[['torre', 'departamento', 'codigo', 'dni', 'nombre']].head(20))
+                    st.stop()
+
+                # Validación de existencia de DNI en la base de propietarios
+                propietarios = gsheets.leer_propietarios()
+                if propietarios.empty:
+                    st.error("No se pudo cargar la lista de propietarios para validar los DNI.")
+                    st.stop()
+
+                # Normalizar DNIs de propietarios
+                def normalizar_dni(dni):
+                    if not dni or dni == '':
+                        return ''
+                    dni_str = str(dni).strip()
+                    if dni_str.isdigit():
+                        if len(dni_str) == 11:
+                            return dni_str
+                        elif len(dni_str) < 8:
+                            return dni_str.zfill(8)
+                    return dni_str
+                propietarios['dni_norm'] = propietarios['dni'].apply(normalizar_dni)
+                dni_prop = set(propietarios['dni_norm'])
+
+                df_con_dni = df_seleccionado[df_seleccionado['dni'] != ''].copy()
+                dni_no_encontrados = df_con_dni[~df_con_dni['dni'].isin(dni_prop)]
+                if not dni_no_encontrados.empty:
+                    st.error("❌ Los siguientes DNI no se encuentran en la base de propietarios:")
+                    st.dataframe(dni_no_encontrados[['torre', 'departamento', 'codigo', 'dni', 'nombre']].head(20))
+                    st.stop()
+
+                # Si llegamos aquí, las validaciones son exitosas
+                st.success(f"Archivo leído: {len(df_seleccionado)} filas. Validaciones superadas.")
                 st.write("Vista previa (primeras 8 filas):")
-                st.dataframe(df_mostrar.head(8))
+                st.dataframe(df_seleccionado.head(8))
 
-                df_guardar = df_seleccionado[columnas_existentes].copy()
+                # Preparar DataFrame para guardar (sin la columna auxiliar 'clave_unica')
+                df_guardar = df_seleccionado.drop(columns=['clave_unica'], errors='ignore')
+                # Reordenar columnas para guardar (torre, departamento, codigo, dni, nombre, luego montos)
+                columnas_fijas = ['torre', 'departamento', 'codigo', 'dni', 'nombre']
+                columnas_montos_orden = list(conceptos.keys())
+                columnas_guardar = [c for c in columnas_fijas if c in df_guardar.columns] + columnas_montos_orden
+                df_guardar = df_guardar[columnas_guardar].copy()
 
-                for col in ['CUOTA_EXTRAORDINARIAS', 'ALQUILER_PARRILLA', 'GARANTIA', 'SALA_ZOOM', 'ALQUILER_SILLAS']:
+                # Limpieza final: convertir montos a números y eliminar NaN
+                for col in columnas_montos_orden:
                     if col in df_guardar.columns:
-                        df_guardar[col] = df_guardar[col].fillna(0)
+                        df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce').fillna(0)
                 for col in ['codigo', 'dni', 'nombre']:
                     if col in df_guardar.columns:
                         df_guardar[col] = df_guardar[col].fillna('')
-
                 df_guardar['torre'] = df_guardar['torre'].astype('Int64')
                 df_guardar['departamento'] = df_guardar['departamento'].astype('Int64')
 
-                df_otros = df_seleccionado
+                df_otros = df_seleccionado  # Para usar después (aunque no se necesita)
 
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
+                st.stop()
 
         if df_otros is not None:
             valido, mes_real = validar_mes_vencimiento(mes_otros, fecha_vencimiento)
@@ -1049,6 +1113,7 @@ with tab4:
                                 except Exception as e:
                                     st.error(f"Error al guardar: {str(e)}")
 
+    # ---------- SUBTAB 2: VISUALIZAR OTROS ----------
     with subtab2:
         st.subheader("Otros Guardados")
         try:
@@ -1065,6 +1130,7 @@ with tab4:
                 # Aplicar formato estándar a torre, código y DNI
                 df_guardado = formatear_campos_estandar(df_guardado)
 
+                # Unir con propietarios para obtener nombre y DNI si no están en la hoja
                 prop = gsheets.leer_propietarios()
                 if not prop.empty and 'nombre' not in df_guardado.columns:
                     col_torre_prop = None
@@ -1075,6 +1141,7 @@ with tab4:
                         elif col.lower() in ['departamento', 'dpto', 'n°dpto']:
                             col_dpto_prop = col
                     if col_torre_prop is not None and col_dpto_prop is not None:
+                        # Obtener columnas útiles de propietarios
                         columnas_seleccion = [col_torre_prop, col_dpto_prop]
                         col_nombre_prop = None
                         for col in prop.columns:
@@ -1112,6 +1179,7 @@ with tab4:
                 else:
                     st.warning("No se pudo cargar la lista de propietarios. Se mostrarán solo torre y departamento.")
 
+                # Formatear números
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -1129,7 +1197,8 @@ with tab4:
                     'ALQUILER_PARRILLA': 'ALQUILER PARRILLA',
                     'GARANTIA': 'GARANTÍA',
                     'SALA_ZOOM': 'SALA ZOOM',
-                    'ALQUILER_SILLAS': 'ALQUILER DE SILLAS'
+                    'ALQUILER_SILLAS': 'ALQUILER DE SILLAS',
+                    'TUBERIAS': 'TUBERÍAS'
                 }
 
                 mapeo = {
