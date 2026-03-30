@@ -9,7 +9,7 @@ st.markdown("Selecciona la plantilla que necesitas para cargar tus datos correct
 # Lista de archivos disponibles (nombre que se muestra, nombre del archivo)
 plantillas = [
     ("Propietarios", "propietarios_plantilla.xlsx"),
-    ("Programación Mantenimiento", "programacion_plantilla.xlsx"),
+    ("Programación Mantenimiento", "mantenimiento_plantilla.xlsx"),
     ("Medidores", "medidores_plantilla.xlsx"),
     ("Amortización", "amortizacion_plantilla.xlsx"),
     ("Otros Ingresos", "otros_plantilla.xlsx"),
