@@ -41,6 +41,7 @@ with tab1:
             try:
                 # ========== PROPIETARIOS ==========
                 prop = gsheets.leer_propietarios()
+                st.write(f"📂 Propietarios cargados: {len(prop)} filas")
                 if prop.empty:
                     st.error("No se pudo cargar la lista de propietarios.")
                     st.stop()
@@ -61,10 +62,13 @@ with tab1:
                 base.rename(columns={col_torre_prop: 'torre', col_depto_prop: 'departamento'}, inplace=True)
                 base['torre'] = pd.to_numeric(base['torre'], errors='coerce')
                 base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce')
-                base = base.dropna(subset=['torre', 'departamento'])
+                # Convert to numeric with coercion and fill missing values
+                base['torre'] = pd.to_numeric(base['torre'], errors='coerce').fillna(0).astype(int)
+                base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce').fillna(0).astype(int)
 
                 # ========== DEUDA INICIAL ==========
                 deuda_df = gsheets.leer_deuda_inicial(anio)
+                st.write(f"📄 Deuda Inicial cargada: {len(deuda_df)} filas")
                 if deuda_df.empty:
                     st.warning(f"No se encontró 'Deuda Inicial {anio}'. Deuda = 0.")
                     deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
@@ -405,9 +409,8 @@ with tab2:
 
         # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO ----------
         # Asegurar que torre y departamento sean numéricos
-        df_resumen['torre'] = pd.to_numeric(df_resumen['torre'], errors='coerce')
-        df_resumen['departamento'] = pd.to_numeric(df_resumen['departamento'], errors='coerce')
-        df_resumen = df_resumen.dropna(subset=['torre', 'departamento'])
+        df_resumen['torre'] = pd.to_numeric(df_resumen['torre'], errors='coerce').fillna(0).astype(int)
+        df_resumen['departamento'] = pd.to_numeric(df_resumen['departamento'], errors='coerce').fillna(0).astype(int)
 
         # Crear clave única combinando torre y departamento
         df_resumen['clave'] = df_resumen['torre'].astype(str) + '_' + df_resumen['departamento'].astype(str)
