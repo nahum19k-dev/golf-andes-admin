@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import supabase_client
-import gspread
+import supabase_client as gsheets  # Importante: alias gsheets para no cambiar el resto del código
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Programación", page_icon="📅", layout="wide")
@@ -159,7 +158,7 @@ with tab1:
         try:
             hojas_prog = gsheets.listar_hojas_programacion()
         except Exception as e:
-            st.error(f"No se pudo conectar con Google Sheets: {e}")
+            st.error(f"No se pudo conectar con Supabase: {e}")
             hojas_prog = []
 
         if hojas_prog:
@@ -516,7 +515,7 @@ with tab2:
         try:
             hojas_medidor = gsheets.listar_hojas_medidor()
         except Exception as e:
-            st.error(f"No se pudo conectar con Google Sheets: {e}")
+            st.error(f"No se pudo conectar con Supabase: {e}")
             hojas_medidor = []
 
         if hojas_medidor:
@@ -705,7 +704,7 @@ with tab3:
         try:
             hojas_amort = gsheets.listar_hojas_amortizacion()
         except Exception as e:
-            st.error(f"No se pudo conectar con Google Sheets: {e}")
+            st.error(f"No se pudo conectar con Supabase: {e}")
             hojas_amort = []
 
         if hojas_amort:
@@ -932,12 +931,9 @@ with tab4:
                 st.error(f"❌ El mes seleccionado ({mes_otros}) no coincide con el mes de la fecha de vencimiento ({mes_real}). Debes seleccionar el mes correspondiente al vencimiento.")
             else:
                 nombre_hoja = f"Otros {mes_real} {fecha_vencimiento.year}"
-                spreadsheet = gsheets.get_spreadsheet()
-                try:
-                    spreadsheet.worksheet(nombre_hoja)
-                    existe = True
-                except gspread.exceptions.WorksheetNotFound:
-                    existe = False
+                # Verificar si ya existe una programación con ese nombre
+                hojas_existentes = gsheets.listar_hojas_otros()
+                existe = nombre_hoja in hojas_existentes
 
                 if existe:
                     st.error(f"⚠️ Ya existe una hoja para {mes_real} {fecha_vencimiento.year}")
@@ -962,7 +958,7 @@ with tab4:
         try:
             hojas_otros = gsheets.listar_hojas_otros()
         except Exception as e:
-            st.error(f"No se pudo conectar con Google Sheets: {e}")
+            st.error(f"No se pudo conectar con Supabase: {e}")
             hojas_otros = []
 
         if hojas_otros:
