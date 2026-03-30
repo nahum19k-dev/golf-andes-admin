@@ -43,17 +43,102 @@ def leer_propietarios():
     df = pd.DataFrame(filas, columns=headers)
     return df
 
-def subir_excel_a_sheets(ruta_excel):
+def subir_excel_a_sheets(df_upload):
+    """
+    Sube el DataFrame de propietarios a Google Sheets.
+    Valida unicidad y maneja códigos COD automáticamente.
+    """
     st.cache_resource.clear()
-    df = pd.read_excel(ruta_excel, dtype=str)
-    df = df.fillna("")
+
+    # Obtener datos existentes para validación de unicidad
+    try:
+        existing = leer_propietarios()
+        existing['combinacion'] = existing['torre'].astype(str) + '_' + existing['dpto'].astype(str) + '_' + existing['dni'].astype(str)
+        combos_existentes = set(existing['combinacion'].tolist())
+    except:
+        combos_existentes = set()
+
+    # Contador de COD - buscar en Google Sheets o iniciar en 0
+    spreadsheet = get_spreadsheet()
+    try:
+        # Intentar leer el contador desde la hoja de control
+        try:
+            control = spreadsheet.worksheet("Control_Codigos")
+            contador_row = control.cell(1, 1).value
+            last_cod_num = int(contador_row) if contador_row else 0
+        except:
+            # Si no existe, crear hoja de control
+            try:
+                control = spreadsheet.add_worksheet(title="Control_Codigos", rows=10, cols=5)
+                control.cell(1, 1, "0")
+                last_cod_num = 0
+            except:
+                last_cod_num = 0
+    except:
+        last_cod_num = 0
+
+    # Procesar filas
+    filas_validas = []
+    duplicados = []
+    cod_counter = last_cod_num
+
+    for _, row in df_upload.iterrows():
+        torre = str(row.get('torre', '')).strip()
+        dpto = str(row.get('dpto', '')).strip()
+        dni = str(row.get('dni', '')).strip()
+        nombre = str(row.get('nombre', '')).strip()
+        codigo = str(row.get('codigo', '')).strip()
+
+        # Si no hay DNI, usar COD
+        if not dni or dni == 'nan':
+            cod_counter += 1
+            dni = f"COD{cod_counter}"
+
+        # Validar unicidad
+        combinacion = f"{torre}_{dpto}_{dni}"
+        if combinacion in combos_existentes:
+            duplicados.append({'torre': torre, 'dpto': dpto, 'dni': dni})
+        else:
+            filas_validas.append({
+                'torre': torre,
+                'dpto': dpto,
+                'codigo': codigo,
+                'dni': dni,
+                'nombre': nombre,
+                'celular': str(row.get('celular', '')).strip(),
+                'correo': str(row.get('correo', '')).strip(),
+                'situacion': str(row.get('situacion', '')).strip()
+            })
+            combos_existentes.add(combinacion)
+
+    # Guardar estado del contador si hay nuevos CODs
+    if cod_counter > last_cod_num:
+        try:
+            control = spreadsheet.worksheet("Control_Codigos")
+            control.cell(1, 1, str(cod_counter))
+        except:
+            pass
+
+    # Mostrar reporte si hay duplicados
+    if duplicados:
+        import streamlit as st
+        st.warning(f"⚠️ {len(duplicados)} fila(s) duplicada(s) detectada(s) y no se subieron:")
+        for dup in duplicados[:5]:  # Mostrar máximo 5
+            st.write(f" - Torre {dup['torre']}, Dpto {dup['dpto']}, DNI/COD: {dup['dni']}")
+        if len(duplicados) > 5:
+            st.write(f"  ... y {len(duplicados) - 5} más")
+
+    # Subir solo las filas válidas
+    df_final = pd.DataFrame(filas_validas)
+    df_final = df_final.fillna("")
+
     sheet = get_sheet("Propietarios")
     sheet.clear()
     sheet.update(
-        [df.columns.tolist()] + df.values.tolist(),
+        [df_final.columns.tolist()] + df_final.values.tolist(),
         value_input_option="RAW"
     )
-    return len(df)
+    return len(df_final)
 
 # ------------------- Programación -------------------
 def existe_programacion(periodo_key: str) -> bool:

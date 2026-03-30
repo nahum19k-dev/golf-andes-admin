@@ -153,7 +153,7 @@ with tab1:
                 base = base.merge(deuda_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(prog_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(amort_df, on=['torre', 'departamento'], how='left').fillna(0)
-                base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna(0)
+                base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna
 
                 # ========== CONSTRUIR MOVIMIENTOS ==========
                 movimientos = []
