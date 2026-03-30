@@ -43,99 +43,33 @@ def leer_propietarios():
     df = pd.DataFrame(filas, columns=headers)
     return df
 
-def subir_excel_a_sheets(df_upload):
+def subir_excel_a_sheets(df):
     """
-    Sube el DataFrame de propietarios a Google Sheets.
-    Valida unicidad y maneja códigos COD automáticamente.
+    Sube un DataFrame a la hoja 'Propietarios', sobrescribiendo todo el contenido.
     """
-    # NOTA: El cache se limpia desde la UI (pages/2_Propietarios.py)
-
-    # Obtener datos existentes para validación de unicidad
-    try:
-        existing = leer_propietarios()
-        existing['combinacion'] = existing['torre'].astype(str) + '_' + existing['dpto'].astype(str) + '_' + existing['dni'].astype(str)
-        combos_existentes = set(existing['combinacion'].tolist())
-    except:
-        combos_existentes = set()
-
-    # Contador de COD - buscar en Google Sheets o iniciar en 0
+    # Limpiar la caché para evitar referencias obsoletas a la hoja
+    st.cache_resource.clear()
     spreadsheet = get_spreadsheet()
+    nombre_hoja = "Propietarios"
+
+    # Verificar si la hoja existe; si no, crearla
     try:
-        # Intentar leer el contador desde la hoja de control
-        try:
-            control = spreadsheet.worksheet("Control_Codigos")
-            contador_row = control.cell(1, 1).value
-            last_cod_num = int(contador_row) if contador_row else 0
-        except:
-            # Si no existe, crear hoja de control
-            try:
-                control = spreadsheet.add_worksheet(title="Control_Codigos", rows=10, cols=5)
-                control.cell(1, 1, "0")
-                last_cod_num = 0
-            except:
-                last_cod_num = 0
-    except:
-        last_cod_num = 0
+        sheet = spreadsheet.worksheet(nombre_hoja)
+    except gspread.exceptions.WorksheetNotFound:
+        sheet = spreadsheet.add_worksheet(title=nombre_hoja, rows=1000, cols=20)
+        st.info(f"Hoja '{nombre_hoja}' no existía, se ha creado automáticamente.")
 
-    # Procesar filas
-    filas_validas = []
-    duplicados = []
-    cod_counter = last_cod_num
-
-    for _, row in df_upload.iterrows():
-        torre = str(row.get('torre', '')).strip()
-        dpto = str(row.get('dpto', '')).strip()
-        dni = str(row.get('dni', '')).strip()
-        nombre = str(row.get('nombre', '')).strip()
-        codigo = str(row.get('codigo', '')).strip()
-
-        # Si no hay DNI, usar COD
-        if not dni or dni == 'nan':
-            cod_counter += 1
-            dni = f"COD{cod_counter}"
-
-        # Validar unicidad
-        combinacion = f"{torre}_{dpto}_{dni}"
-        if combinacion in combos_existentes:
-            duplicados.append({'torre': torre, 'dpto': dpto, 'dni': dni})
-        else:
-            filas_validas.append({
-                'torre': torre,
-                'dpto': dpto,
-                'codigo': codigo,
-                'dni': dni,
-                'nombre': nombre,
-                'celular': str(row.get('celular', '')).strip(),
-                'correo': str(row.get('correo', '')).strip(),
-                'situacion': str(row.get('situacion', '')).strip()
-            })
-            combos_existentes.add(combinacion)
-
-    # Guardar estado del contador si hay nuevos CODs
-    if cod_counter > last_cod_num:
-        try:
-            control = spreadsheet.worksheet("Control_Codigos")
-            control.cell(1, 1, str(cod_counter))
-        except:
-            pass
-
-    # Reportar duplicados (dejar que la UI maneje la presentación)
-    if duplicados:
-        # Devolver información de duplicados a través de excepción
-        raise ValueError(f"Duplicados detectados: {len(duplicados)} registros")
-
-    # Subir solo las filas válidas
-    df_final = pd.DataFrame(filas_validas)
-    df_final = df_final.fillna("")
-
-    sheet = get_sheet("Propietarios")
+    # Limpiar todo el contenido actual
     sheet.clear()
-    sheet.update(
-        "A1",  # Rango donde empezar a escribir
-        [df_final.columns.tolist()] + df_final.values.tolist(),
-        value_input_option="RAW"
-    )
-    return len(df_final)
+
+    # Preparar los datos
+    df_clean = df.fillna("")  # Reemplazar NaN por cadena vacía
+    datos = [df_clean.columns.tolist()] + df_clean.values.tolist()
+
+    # Subir los datos (valor_input_option="RAW" para evitar interpretación)
+    sheet.update(datos, value_input_option="RAW")
+
+    return len(df_clean)
 
 # ------------------- Programación -------------------
 def existe_programacion(periodo_key: str) -> bool:
@@ -179,6 +113,7 @@ def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, a
     datos = df_para_guardar.values.tolist()
     if datos:
         nueva_hoja.update("A4", datos)
+    st.cache_resource.clear()
     return nombre_hoja
 
 # ------------------- Pagos -------------------
@@ -205,7 +140,7 @@ def guardar_pagos(df: pd.DataFrame, mes: str, anio: int):
             )
     df_para_guardar = df_para_guardar.astype(str).fillna("")
     datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
-    nueva_hoja.update("A1", datos, value_input_option="RAW")
+    nueva_hoja.update(datos, value_input_option="RAW")
     return nombre_hoja
 
 def listar_hojas_pagos():
@@ -342,7 +277,7 @@ def guardar_amortizacion(df: pd.DataFrame, mes: str, anio: int):
             )
     df_para_guardar = df_para_guardar.astype(str).fillna("")
     datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
-    nueva_hoja.update("A1", datos, value_input_option="RAW")
+    nueva_hoja.update(datos, value_input_option="RAW")
     return nombre_hoja
 
 def listar_hojas_amortizacion():
@@ -388,7 +323,7 @@ def guardar_deuda_inicial(df: pd.DataFrame, anio: int):
             )
     df_para_guardar = df_para_guardar.astype(str).fillna("")
     datos = [df_para_guardar.columns.tolist()] + df_para_guardar.values.tolist()
-    nueva_hoja.update("A1", datos, value_input_option="RAW")
+    nueva_hoja.update(datos, value_input_option="RAW")
     return nombre_hoja
 
 def listar_hojas_deuda():
@@ -563,6 +498,8 @@ def leer_deuda_inicial(anio: int):
     if df.empty and anio > 2020:
         nombre_hoja_anterior = f"Deuda Inicial {anio-1}"
         df = leer_hoja_deuda(nombre_hoja_anterior)
+        if not df.empty:
+            st.info(f"Usando deuda del año anterior ({anio-1}) porque no se encontró para {anio}.")
     return df
 
 # ====================== FUNCIONES PARA VISUALIZAR PROGRAMACIÓN ======================
@@ -654,7 +591,7 @@ def guardar_otros(df, mes, anio):
         pass
     # Crear nueva hoja y subir datos
     worksheet = spreadsheet.add_worksheet(title=nombre_hoja, rows="1000", cols="20")
-    worksheet.update("A1", [df_clean.columns.values.tolist()] + df_clean.values.tolist())
+    worksheet.update([df_clean.columns.values.tolist()] + df_clean.values.tolist())
     return nombre_hoja
 
 def listar_hojas_otros():
@@ -685,7 +622,7 @@ def registrar_fecha_programacion(tipo: str, nombre_hoja: str, fecha_emision, fec
         worksheet = spreadsheet.worksheet("Control_Fechas")
     except gspread.exceptions.WorksheetNotFound:
         worksheet = spreadsheet.add_worksheet(title="Control_Fechas", rows="1000", cols="10")
-        worksheet.update("A1", [["TIPO", "NOMBRE_HOJA", "FECHA_EMISION", "FECHA_VENCIMIENTO"]])
+        worksheet.update([["TIPO", "NOMBRE_HOJA", "FECHA_EMISION", "FECHA_VENCIMIENTO"]])
 
     registros = worksheet.get_all_values()
     if len(registros) > 1:
