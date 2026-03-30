@@ -1,7 +1,6 @@
-
 import streamlit as st
 import pandas as pd
-import supabase_client
+import supabase_client as gsheets  # <-- CORRECCIÓN: alias gsheets
 from datetime import datetime
 
 st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
@@ -62,7 +61,6 @@ with tab1:
                 base.rename(columns={col_torre_prop: 'torre', col_depto_prop: 'departamento'}, inplace=True)
                 base['torre'] = pd.to_numeric(base['torre'], errors='coerce')
                 base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce')
-                # Convert to numeric with coercion and fill missing values
                 base['torre'] = pd.to_numeric(base['torre'], errors='coerce').fillna(0).astype(int)
                 base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce').fillna(0).astype(int)
 
@@ -153,7 +151,7 @@ with tab1:
                 base = base.merge(deuda_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(prog_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(amort_df, on=['torre', 'departamento'], how='left').fillna(0)
-                base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna
+                base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna(0)  # <-- CORREGIDO: cerré paréntesis
 
                 # ========== CONSTRUIR MOVIMIENTOS ==========
                 movimientos = []
@@ -294,7 +292,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '     <tr>\n'
+                    html += '      <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -303,7 +301,7 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '     </tr>\n'
+                    html += '      </tr>\n'
 
                 html += '      <tr>\n'
                 for col in col_names:
