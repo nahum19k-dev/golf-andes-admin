@@ -48,7 +48,7 @@ def subir_excel_a_sheets(df_upload):
     Sube el DataFrame de propietarios a Google Sheets.
     Valida unicidad y maneja códigos COD automáticamente.
     """
-    st.cache_resource.clear()
+    # NOTA: El cache se limpia desde la UI (pages/2_Propietarios.py)
 
     # Obtener datos existentes para validación de unicidad
     try:
@@ -119,14 +119,10 @@ def subir_excel_a_sheets(df_upload):
         except:
             pass
 
-    # Mostrar reporte si hay duplicados
+    # Reportar duplicados (dejar que la UI maneje la presentación)
     if duplicados:
-        import streamlit as st
-        st.warning(f"⚠️ {len(duplicados)} fila(s) duplicada(s) detectada(s) y no se subieron:")
-        for dup in duplicados[:5]:  # Mostrar máximo 5
-            st.write(f" - Torre {dup['torre']}, Dpto {dup['dpto']}, DNI/COD: {dup['dni']}")
-        if len(duplicados) > 5:
-            st.write(f"  ... y {len(duplicados) - 5} más")
+        # Devolver información de duplicados a través de excepción
+        raise ValueError(f"Duplicados detectados: {len(duplicados)} registros")
 
     # Subir solo las filas válidas
     df_final = pd.DataFrame(filas_validas)
@@ -182,7 +178,6 @@ def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, a
     datos = df_para_guardar.values.tolist()
     if datos:
         nueva_hoja.update("A4", datos)
-    st.cache_resource.clear()
     return nombre_hoja
 
 # ------------------- Pagos -------------------
@@ -567,8 +562,6 @@ def leer_deuda_inicial(anio: int):
     if df.empty and anio > 2020:
         nombre_hoja_anterior = f"Deuda Inicial {anio-1}"
         df = leer_hoja_deuda(nombre_hoja_anterior)
-        if not df.empty:
-            st.info(f"Usando deuda del año anterior ({anio-1}) porque no se encontró para {anio}.")
     return df
 
 # ====================== FUNCIONES PARA VISUALIZAR PROGRAMACIÓN ======================
