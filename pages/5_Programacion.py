@@ -145,21 +145,61 @@ with tab1:
                 df_seleccionado = df_seleccionado.dropna(subset=['torre', 'departamento'])
                 df_seleccionado['Mantenimiento'] = df_seleccionado['Mantenimiento'].fillna(0)
 
-                st.success(f"Archivo leído: {len(df_seleccionado)} filas")
+                # ================== VALIDACIONES PREVIAS ==================
+                # 1. Crear código único a partir de torre+departamento si no existe columna 'codigo'
+                if 'codigo' not in df_seleccionado.columns:
+                    df_seleccionado['codigo'] = df_seleccionado['torre'].astype(str).str.zfill(2) + df_seleccionado['departamento'].astype(str).str.zfill(3)
+                # Asegurar que la columna dni exista (si no, crear vacía)
+                if 'dni' not in df_seleccionado.columns:
+                    df_seleccionado['dni'] = ""
+
+                # Limpiar valores NaN en codigo y dni
+                df_seleccionado['codigo'] = df_seleccionado['codigo'].astype(str).str.strip().replace('nan', '')
+                df_seleccionado['dni'] = df_seleccionado['dni'].astype(str).str.strip().replace('nan', '')
+
+                # 2. Validación de unicidad (código + dni)
+                df_seleccionado['clave_unica'] = df_seleccionado['codigo'] + '_' + df_seleccionado['dni']
+                duplicados = df_seleccionado[df_seleccionado.duplicated(subset=['clave_unica'], keep=False)]
+                if not duplicados.empty:
+                    st.error("❌ Se encontraron registros duplicados (mismo código + DNI) en el archivo:")
+                    st.dataframe(duplicados[['torre', 'departamento', 'codigo', 'dni', 'nombre']].head(20))
+                    st.stop()
+
+                # 3. Validación de existencia de DNI en la base de propietarios
+                propietarios = gsheets.leer_propietarios()
+                if propietarios.empty:
+                    st.error("No se pudo cargar la lista de propietarios para validar los DNI.")
+                    st.stop()
+
+                # Obtener conjunto de DNIs existentes (limpiados)
+                dni_prop = set(propietarios['dni'].astype(str).str.strip().replace('nan', ''))
+                # Filtrar filas donde dni no está vacío
+                df_con_dni = df_seleccionado[df_seleccionado['dni'] != ''].copy()
+                dni_no_encontrados = df_con_dni[~df_con_dni['dni'].isin(dni_prop)]
+                if not dni_no_encontrados.empty:
+                    st.error("❌ Los siguientes DNI no se encuentran en la base de propietarios:")
+                    st.dataframe(dni_no_encontrados[['torre', 'departamento', 'codigo', 'dni', 'nombre']].head(20))
+                    st.stop()
+
+                # Si llegamos aquí, las validaciones son exitosas
+                st.success(f"Archivo leído: {len(df_seleccionado)} filas. Validaciones superadas.")
                 st.write("Vista previa (primeras 8 filas):")
                 st.dataframe(df_seleccionado.head(8))
 
+                # Preparar DataFrame para guardar (sin la columna auxiliar 'clave_unica')
+                df_guardar = df_seleccionado.drop(columns=['clave_unica'], errors='ignore')
                 columnas_a_guardar = ['torre', 'departamento', 'Mantenimiento']
-                if 'codigo' in df_seleccionado.columns:
+                if 'codigo' in df_guardar.columns:
                     columnas_a_guardar.insert(2, 'codigo')
-                if 'dni' in df_seleccionado.columns:
+                if 'dni' in df_guardar.columns:
                     columnas_a_guardar.insert(3, 'dni')
-                if 'nombre' in df_seleccionado.columns:
+                if 'nombre' in df_guardar.columns:
                     columnas_a_guardar.insert(4, 'nombre')
-                df_guardar = df_seleccionado[columnas_a_guardar].copy()
+                df_guardar = df_guardar[columnas_a_guardar].copy()
 
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
+                st.stop()
 
         if df is not None:
             valido, mes_real = validar_mes_vencimiento(mes, fecha_vencimiento)
