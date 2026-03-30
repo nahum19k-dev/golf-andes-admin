@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 from datetime import datetime
+import json
 
 @st.cache_resource
 def get_supabase() -> Client:
@@ -9,21 +10,36 @@ def get_supabase() -> Client:
     key = st.secrets["supabase"]["key"]
     return create_client(url, key)
 
+# ====================== FUNCIÓN AUXILIAR PARA LIMPIAR NOMBRES DE COLUMNAS ======================
+def limpiar_columnas(df: pd.DataFrame) -> pd.DataFrame:
+    """Limpia nombres de columnas: espacios, mayúsculas, caracteres extraños."""
+    df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
+    return df
+
 # ====================== PROPIETARIOS ======================
 def leer_propietarios() -> pd.DataFrame:
     supabase = get_supabase()
     response = supabase.table('propietarios').select('*').execute()
     if response.data:
         df = pd.DataFrame(response.data)
+        df = limpiar_columnas(df)
         if 'id' in df.columns:
             df = df.drop(columns=['id'])
-        return df
+        columnas_esperadas = ['codigo', 'torre', 'dpto', 'dni', 'nombre', 'celular', 'correo', 'situacion', 'direccion']
+        for col in columnas_esperadas:
+            if col not in df.columns:
+                df[col] = ''
+        return df[columnas_esperadas]
     return pd.DataFrame()
 
 def subir_excel_a_sheets(df: pd.DataFrame) -> int:
     supabase = get_supabase()
+    # Borrar todos los registros existentes
     supabase.table('propietarios').delete().neq('id', 0).execute()
-    records = df.to_dict(orient='records')
+    # Limpiar nombres de columnas en el DataFrame antes de insertar
+    df_clean = df.copy()
+    df_clean.columns = df_clean.columns.str.strip().str.lower()
+    records = df_clean.to_dict(orient='records')
     response = supabase.table('propietarios').insert(records).execute()
     return len(response.data)
 
@@ -59,7 +75,9 @@ def leer_hoja_programacion(nombre_hoja):
     supabase = get_supabase()
     response = supabase.table('programacion').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
-        return pd.DataFrame(response.data[0]['datos'])
+        df = pd.DataFrame(response.data[0]['datos'])
+        df = limpiar_columnas(df)
+        return df
     return pd.DataFrame()
 
 # ====================== PAGOS ======================
@@ -99,7 +117,9 @@ def leer_hoja_pagos(nombre_hoja):
     supabase = get_supabase()
     response = supabase.table('pagos').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
-        return pd.DataFrame(response.data[0]['datos'])
+        df = pd.DataFrame(response.data[0]['datos'])
+        df = limpiar_columnas(df)
+        return df
     return pd.DataFrame()
 
 def leer_pagos_mes(mes: str, anio: int):
@@ -107,6 +127,7 @@ def leer_pagos_mes(mes: str, anio: int):
     response = supabase.table('pagos').select('datos').eq('mes', mes).eq('anio', anio).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
+        df = limpiar_columnas(df)
         rename_map = {
             'fecha': 'fecha',
             'torre': 'torre',
@@ -163,7 +184,9 @@ def leer_hoja_medidor(nombre_hoja):
     supabase = get_supabase()
     response = supabase.table('medidores').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
-        return pd.DataFrame(response.data[0]['datos'])
+        df = pd.DataFrame(response.data[0]['datos'])
+        df = limpiar_columnas(df)
+        return df
     return pd.DataFrame()
 
 # ====================== AMORTIZACIÓN ======================
@@ -203,7 +226,9 @@ def leer_hoja_amortizacion(nombre_hoja):
     supabase = get_supabase()
     response = supabase.table('amortizacion').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
-        return pd.DataFrame(response.data[0]['datos'])
+        df = pd.DataFrame(response.data[0]['datos'])
+        df = limpiar_columnas(df)
+        return df
     return pd.DataFrame()
 
 # ====================== OTROS ======================
@@ -243,7 +268,9 @@ def leer_hoja_otros(nombre_hoja):
     supabase = get_supabase()
     response = supabase.table('otros').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
-        return pd.DataFrame(response.data[0]['datos'])
+        df = pd.DataFrame(response.data[0]['datos'])
+        df = limpiar_columnas(df)
+        return df
     return pd.DataFrame()
 
 # ====================== DEUDA INICIAL ======================
@@ -272,7 +299,9 @@ def leer_hoja_deuda(nombre_hoja):
     supabase = get_supabase()
     response = supabase.table('deuda_inicial').select('datos').eq('anio', anio).execute()
     if response.data:
-        return pd.DataFrame(response.data[0]['datos'])
+        df = pd.DataFrame(response.data[0]['datos'])
+        df = limpiar_columnas(df)
+        return df
     return pd.DataFrame()
 
 # ====================== CONTROL DE FECHAS ======================
@@ -370,24 +399,18 @@ def leer_deuda_inicial(anio: int):
             st.info(f"Usando deuda del año anterior ({anio-1}) porque no se encontró para {anio}.")
             return df_ant
     return df
-    # ====================== CONTROL DE CÓDIGOS (para generar DNIs automáticos) ======================
+
+# ====================== CONTROL DE CÓDIGOS (para generar DNIs automáticos) ======================
 def obtener_ultimo_codigo() -> int:
-    """
-    Obtiene el último código generado sin incrementarlo.
-    """
     supabase = get_supabase()
     response = supabase.table('control_codigos').select('ultimo_codigo').execute()
     if response.data:
         return response.data[0]['ultimo_codigo']
     else:
-        # Si no existe, insertar 0 y devolver 0
         supabase.table('control_codigos').insert({'ultimo_codigo': 0}).execute()
         return 0
 
 def obtener_siguiente_codigo() -> int:
-    """
-    Incrementa el contador y devuelve el nuevo valor.
-    """
     supabase = get_supabase()
     response = supabase.table('control_codigos').select('id', 'ultimo_codigo').execute()
     if response.data:
@@ -396,6 +419,5 @@ def obtener_siguiente_codigo() -> int:
         supabase.table('control_codigos').update({'ultimo_codigo': nuevo}).eq('id', registro['id']).execute()
         return nuevo
     else:
-        # No existe registro, insertar 1 y devolver 1
         supabase.table('control_codigos').insert({'ultimo_codigo': 1}).execute()
         return 1
