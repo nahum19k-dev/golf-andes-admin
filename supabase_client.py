@@ -23,12 +23,14 @@ def leer_propietarios() -> pd.DataFrame:
     if response.data:
         df = pd.DataFrame(response.data)
         df = limpiar_columnas(df)
-        if 'id' in df.columns:
-            df = df.drop(columns=['id'])
-        columnas_esperadas = ['codigo', 'torre', 'dpto', 'dni', 'nombre', 'celular', 'correo', 'situacion', 'direccion']
+        # Conservar la columna 'id' (necesaria para eliminar registros)
+        columnas_esperadas = ['id', 'codigo', 'torre', 'dpto', 'dni', 'nombre', 'celular', 'correo', 'situacion', 'direccion']
         for col in columnas_esperadas:
             if col not in df.columns:
-                df[col] = ''
+                if col == 'id':
+                    df[col] = 0
+                else:
+                    df[col] = ''
         return df[columnas_esperadas]
     return pd.DataFrame()
 
@@ -42,6 +44,32 @@ def subir_excel_a_sheets(df: pd.DataFrame) -> int:
     records = df_clean.to_dict(orient='records')
     response = supabase.table('propietarios').insert(records).execute()
     return len(response.data)
+
+def agregar_propietario(registro: dict) -> bool:
+    """
+    Inserta un nuevo propietario en la tabla 'propietarios'.
+    Devuelve True si se insertó correctamente.
+    """
+    supabase = get_supabase()
+    try:
+        supabase.table('propietarios').insert(registro).execute()
+        return True
+    except Exception as e:
+        print(f"Error al insertar: {e}")
+        return False
+
+def eliminar_propietario_por_id(record_id: int) -> bool:
+    """
+    Elimina un propietario por su ID.
+    Devuelve True si se eliminó correctamente.
+    """
+    supabase = get_supabase()
+    try:
+        supabase.table('propietarios').delete().eq('id', record_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error al eliminar: {e}")
+        return False
 
 # ====================== PROGRAMACIÓN ======================
 def existe_programacion(periodo_key: str) -> bool:
