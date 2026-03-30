@@ -5,19 +5,18 @@ from datetime import datetime
 
 st.set_page_config(page_title="Datos Propietarios", page_icon="📊", layout="wide")
 
-# Sidebar styling (lo mantienes)
+# Sidebar styling
 st.markdown("""<style>
 [data-testid="stSidebar"] { background: linear-gradient(180deg, #1b5e20 0%, #2e7d32 100%); }
 [data-testid="stSidebar"] * { color: white !important; }
 </style>""", unsafe_allow_html=True)
 
-# Título principal
 st.title("🏠 Gestión de Propietarios y Deuda Inicial")
 
 # Crear pestañas principales
 tab1, tab2, tab3 = st.tabs(["📋 Visualizar Propietarios", "📤 Subir Propietarios", "💰 Deuda Inicial"])
 
-# ====================== TAB 1: PROPIETARIOS (original) ======================
+# ====================== TAB 1: VISUALIZAR PROPIETARIOS ======================
 with tab1:
     @st.cache_data(ttl=60)
     def cargar():
@@ -35,7 +34,7 @@ with tab1:
             mostrar = df[mask]
         else:
             mostrar = df
-        st.markdown("Mostrando **" + str(len(mostrar)) + "** propietarios")
+        st.markdown(f"Mostrando **{len(mostrar)}** propietarios")
         tabla = mostrar[["codigo","torre","dpto","dni","nombre","celular","correo","situacion"]].copy()
         tabla.columns = ["Código","Torre","N° Dpto","DNI","Nombres y Apellidos","Celular","Correo","Situación"]
         st.dataframe(tabla.reset_index(drop=True), use_container_width=True, hide_index=True, height=500)
@@ -44,11 +43,160 @@ with tab1:
     except Exception as e:
         st.error(f"Error conectando con Google Sheets: {e}")
 
-# ====================== TAB 2: DEUDA INICIAL ======================
+# ====================== TAB 2: SUBIR PROPIETARIOS ======================
 with tab2:
+    st.info("""
+    **Formato esperado del archivo Excel/CSV:**
+    - Columnas requeridas: `TORRE`, `N°DPTO`, `CODIGO`, `DNI`, `NOMBRE`
+    - Si no se proporciona DNI, se generará automáticamente un código COD1, COD2, etc.
+    - La combinación Torre + N°DPTO debe ser única en toda la base.
+    """)
+
+    uploaded_file = st.file_uploader("Elige el archivo Excel o CSV de propietarios",
+                                    type=["xlsx", "csv"],
+                                    key="propietarios_file")
+
+    if uploaded_file is not None:
+        try:
+            # Leer el archivo según su tipo
+            if uploaded_file.name.endswith('.csv'):
+                df_raw = pd.read_csv(uploaded_file, dtype=str)
+            else:
+                df_raw = pd.read_excel(uploaded_file, dtype=str)
+
+            # Limpiar nombres de columnas y mapear a los internos
+            df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ')
+            col_mapping = {}
+            for col in df_raw.columns:
+                col_lc = col.lower()
+                if 'torre' in col_lc:
+                    col_mapping['torre'] = col
+                elif 'dpto' in col_lc or 'departamento' in col_lc or 'n°dpto' in col_lc:
+                    col_mapping['dpto'] = col
+                elif 'codigo' in col_lc:
+                    col_mapping['codigo'] = col
+                elif 'dni' in col_lc:
+                    col_mapping['dni'] = col
+                elif 'nombre' in col_lc or 'apellido' in col_lc:
+                    col_mapping['nombre'] = col
+
+            # Verificar que existan todas las columnas obligatorias
+            cols_req = ['torre', 'dpto', 'codigo', 'nombre']
+            faltantes = [c for c in cols_req if c not in col_mapping]
+            if faltantes:
+                st.error(f"Faltan columnas obligatorias: {', '.join(faltantes)}")
+                st.stop()
+
+            # Crear DataFrame normalizado
+            df = pd.DataFrame({
+                'torre': df_raw[col_mapping['torre']].astype(str).str.strip(),
+                'dpto': df_raw[col_mapping['dpto']].astype(str).str.strip(),
+                'codigo': df_raw[col_mapping['codigo']].astype(str).str.strip(),
+                'nombre': df_raw[col_mapping['nombre']].astype(str).str.strip(),
+            })
+            # DNI es opcional, si existe usarlo
+            if 'dni' in col_mapping:
+                df['dni'] = df_raw[col_mapping['dni']].astype(str).str.strip()
+            else:
+                df['dni'] = ""
+
+            # Columnas opcionales
+            for opt in ['celular', 'correo', 'situacion']:
+                if opt in col_mapping:
+                    df[opt] = df_raw[col_mapping[opt]].astype(str).str.strip()
+                else:
+                    df[opt] = ""
+
+            # ----------------- VALIDACIONES -----------------
+            # 1) Torre+Depto no duplicados dentro del archivo
+            df['key'] = df['torre'] + '_' + df['dpto']
+            duplicados_internos = df[df.duplicated(subset=['key'], keep=False)]
+            if not duplicados_internos.empty:
+                st.error("🚨 Se encontraron departamentos duplicados en el archivo:")
+                st.dataframe(duplicados_internos[['torre','dpto','codigo','nombre']], use_container_width=True)
+                st.stop()
+
+            # 2) Validar contra datos existentes en Sheets
+            try:
+                existing = gsheets.leer_propietarios()
+                if not existing.empty:
+                    existing['key'] = existing['torre'].astype(str) + '_' + existing['dpto'].astype(str)
+                    claves_existentes = set(existing['key'].tolist())
+                    claves_nuevas = set(df['key'].tolist())
+                    claves_dup = claves_nuevas & claves_existentes
+                    if claves_dup:
+                        st.error(f"🚨 {len(claves_dup)} departamentos ya existen en la base:")
+                        duplicados_exist = existing[existing['key'].isin(claves_dup)][['torre','dpto','codigo','dni','nombre']]
+                        st.dataframe(duplicados_exist, use_container_width=True)
+                        st.stop()
+            except:
+                pass  # No hay datos previos
+
+            # ---------- Generar COD automático si no hay DNI ----------
+            # Leer contador desde Control_Codigos
+            try:
+                spreadsheet = gsheets.get_spreadsheet()
+                try:
+                    control = spreadsheet.worksheet("Control_Codigos")
+                    last_val = control.cell(1, 1).value
+                    cod_counter = int(last_val) if last_val else 0
+                except:
+                    # Crear hoja de control si no existe
+                    control = spreadsheet.add_worksheet(title="Control_Codigos", rows=10, cols=5)
+                    control.update_cell(1, 1, "0")
+                    cod_counter = 0
+            except:
+                cod_counter = 0
+
+            # Asignar COD a registros sin DNI
+            nuevas_filas = []
+            for _, fila in df.iterrows():
+                dni = str(fila['dni']).strip()
+                if not dni or dni.lower() == 'nan':
+                    cod_counter += 1
+                    dni = f"COD{cod_counter}"
+
+                nuevas_filas.append({
+                    'torre': fila['torre'],
+                    'dpto': fila['dpto'],
+                    'codigo': fila['codigo'],
+                    'dni': dni,
+                    'nombre': fila['nombre'],
+                    'celular': fila.get('celular', ''),
+                    'correo': fila.get('correo', ''),
+                    'situacion': fila.get('situacion', '')
+                })
+
+            # Guardar contador actualizado
+            if cod_counter > 0:
+                try:
+                    control.update_cell(1, 1, str(cod_counter))
+                except:
+                    pass
+
+            # Mostrar resumen
+            st.success(f"✅ {len(nuevas_filas)} registro(s) listo(s) para subir.")
+            df_preview = pd.DataFrame(nuevas_filas)
+            st.write("Vista previa:")
+            st.dataframe(df_preview, use_container_width=True)
+
+            if st.button("💾 Guardar en Google Sheets", type="primary"):
+                with st.spinner("Guardando..."):
+                    try:
+                        df_upload = pd.DataFrame(nuevas_filas).fillna("")
+                        total = gsheets.subir_excel_a_sheets(df_upload)
+                        st.success(f"¡{total} propietarios guardados correctamente!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+        except Exception as e:
+            st.error(f"Error al procesar el archivo: {e}")
+
+# ====================== TAB 3: DEUDA INICIAL ======================
+with tab3:
     st.header("💰 Deuda Inicial (al 31/12 del año anterior)")
 
-    # Sub‑pestañas dentro de Deuda
     sub1, sub2 = st.tabs(["📤 Subir Deuda", "📊 Visualizar Deudas"])
 
     # ---------- SUBTAB 1: SUBIR DEUDA ----------
@@ -57,7 +205,7 @@ with tab2:
         with col1:
             anio_deuda = st.number_input("Año de la deuda", min_value=2020, max_value=2030, value=2025, step=1)
         with col2:
-            st.write("")  # espacio
+            st.write("")
 
         st.info("""
         **Formato esperado del archivo Excel:**
@@ -70,34 +218,27 @@ with tab2:
 
         if uploaded_deuda is not None:
             try:
-                # Leer asumiendo encabezados en primera fila
                 df = pd.read_excel(uploaded_deuda, sheet_name=0, header=0)
                 df.columns = df.columns.str.strip().str.replace('\n', ' ')
 
-                # Eliminar fila de total
+                # Eliminar fila TOTAL si existe
                 if 'APELLIDOS  Y  NOMBRES' in df.columns:
                     df = df[~df['APELLIDOS  Y  NOMBRES'].astype(str).str.contains('TOTAL', case=False, na=False)]
-                # Quitar filas sin torre o departamento
                 df = df.dropna(subset=['TORRE', 'N°DPTO'])
 
-                # Calcular total de la deuda
                 col_deuda = 'DEUDA AL 31/12/2025'
                 if col_deuda in df.columns:
-                    # Convertir a numérico, manejar errores
                     deuda_numeric = pd.to_numeric(df[col_deuda], errors='coerce')
                     total_deuda = deuda_numeric.sum()
                     total_formateado = f"S/ {total_deuda:,.2f}" if not pd.isna(total_deuda) else "S/ 0.00"
                 else:
                     total_formateado = "No disponible"
 
-                # Vista previa con índice desde 1
                 df_vista = df.reset_index(drop=True)
                 df_vista.index = df_vista.index + 1
                 st.success(f"Archivo leído: {len(df)} filas válidas")
-                
-                # Mostrar total de deuda
                 st.metric("💰 Total Deuda", total_formateado)
-                
+
                 st.write("Vista previa (primeras 10 filas):")
                 st.dataframe(df_vista.head(10), use_container_width=True)
 
@@ -124,7 +265,6 @@ with tab2:
             df_deuda = gsheets.leer_hoja_deuda(hoja_seleccionada)
 
             if not df_deuda.empty:
-                # Asegurar que la columna de deuda sea numérica
                 col_deuda = 'DEUDA AL 31/12/2025'
                 if col_deuda in df_deuda.columns:
                     deuda_numeric = pd.to_numeric(df_deuda[col_deuda], errors='coerce')
@@ -133,7 +273,6 @@ with tab2:
                 else:
                     total_formateado = "No disponible"
 
-                # Formatear números (eliminar .0)
                 def formatear_numero(valor):
                     try:
                         if pd.isna(valor):
@@ -152,16 +291,12 @@ with tab2:
                 if col_deuda in df_deuda.columns:
                     df_deuda[col_deuda] = deuda_numeric.apply(formatear_numero)
 
-                # Índice empezando en 1
                 df_deuda = df_deuda.reset_index(drop=True)
                 df_deuda.index = df_deuda.index + 1
 
-                # Mostrar total de deuda
                 st.metric("💰 Total Deuda", total_formateado)
-                
                 st.dataframe(df_deuda.fillna(""), use_container_width=True, height=600)
 
-                # Descarga a Excel
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
