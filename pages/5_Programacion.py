@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import supabase_client as gsheets  # Importante: alias gsheets para no cambiar el resto del código
+import supabase_client as gsheets  # alias para mantener compatibilidad
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Programación", page_icon="📅", layout="wide")
@@ -285,7 +285,11 @@ with tab1:
                     except:
                         return 0.0
 
-                total_mantenimiento = df_viz['MANTENIMIENTO (S/)'].apply(extraer_numero).sum()
+                # Calcular total solo si la columna existe
+                if 'MANTENIMIENTO (S/)' in df_viz.columns:
+                    total_mantenimiento = df_viz['MANTENIMIENTO (S/)'].apply(extraer_numero).sum()
+                else:
+                    total_mantenimiento = 0
                 total_formateado = f"S/ {total_mantenimiento:,.2f}"
 
                 st.metric("💰 Total de Mantenimiento", total_formateado)
