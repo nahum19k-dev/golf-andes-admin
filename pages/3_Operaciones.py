@@ -1,7 +1,7 @@
 
 import streamlit as st
 import pandas as pd
-import gsheets
+import supabase_client
 from datetime import datetime
 
 st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
