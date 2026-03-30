@@ -17,8 +17,8 @@ plantillas = [
     ("Deuda Inicial", "deuda_inicial_plantilla.xlsx")
 ]
 
-# Carpeta donde están los archivos (relativo a la raíz del proyecto)
-carpeta_plantillas = "plantillas"
+# Carpeta donde están los archivos (coincide con el nombre en GitHub)
+carpeta_plantillas = "planillas"
 
 # Mostrar cada plantilla con su botón de descarga
 for nombre, archivo in plantillas:
@@ -33,7 +33,7 @@ for nombre, archivo in plantillas:
                 use_container_width=True
             )
     except FileNotFoundError:
-        st.error(f"❌ Archivo no encontrado: {archivo}. Asegúrate de que esté en la carpeta `plantillas/`.")
+        st.error(f"❌ Archivo no encontrado: {archivo}. Asegúrate de que esté en la carpeta `{carpeta_plantillas}/`.")
 
 st.markdown("---")
 st.info("💡 **Nota:** Descarga la plantilla correspondiente, complétala con tus datos y luego súbela en la página correspondiente (Propietarios, Programación, Pagos, etc.).")
