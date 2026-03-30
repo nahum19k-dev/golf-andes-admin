@@ -47,9 +47,12 @@ with tab1:
 with tab2:
     st.info("""
     **Formato esperado del archivo Excel/CSV:**
-    - Columnas requeridas: `TORRE`, `N°DPTO`, `CODIGO`, `DNI`, `NOMBRE`
-    - Si no se proporciona DNI, se generará automáticamente un código COD1, COD2, etc.
-    - La combinación Torre + N°DPTO debe ser única en toda la base.
+    - Columnas requeridas: `TORRE`, `N°DPTO`, `CODIGO`, `NOMBRE`
+    - El DNI es opcional; si no se proporciona, se genera automáticamente como COD1, COD2...
+    - La combinación Torre + N°DPTO debe ser única.
+    - Torre se guardará con dos dígitos (01, 02, … 19).  
+    - Código se guardará con cinco dígitos (relleno con cero a la izquierda).  
+    - DNI se formateará a 8 dígitos (si es numérico y tiene menos de 8). RUC (11 dígitos) se conserva.
     """)
 
     uploaded_file = st.file_uploader("Elige el archivo Excel o CSV de propietarios",
@@ -64,31 +67,33 @@ with tab2:
             else:
                 df_raw = pd.read_excel(uploaded_file, dtype=str)
 
-            # Limpiar nombres de columnas y mapear a los internos
+            # Limpiar nombres de columnas
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ')
+            
+            # --- DETECCIÓN EXACTA DE COLUMNAS ---
             col_mapping = {}
             for col in df_raw.columns:
-                col_lc = col.lower()
-                if 'torre' in col_lc:
+                col_lc = col.lower().strip()
+                if col_lc == 'torre':
                     col_mapping['torre'] = col
-                elif 'dpto' in col_lc or 'departamento' in col_lc or 'n°dpto' in col_lc:
+                elif col_lc in ['dpto', 'departamento', 'n°dpto']:
                     col_mapping['dpto'] = col
-                elif 'codigo' in col_lc:
+                elif col_lc == 'codigo':
                     col_mapping['codigo'] = col
-                elif 'dni' in col_lc:
+                elif col_lc == 'dni':
                     col_mapping['dni'] = col
-                elif 'nombre' in col_lc or 'apellido' in col_lc:
+                elif col_lc in ['nombre', 'apellidos y nombres', 'nombres']:
                     col_mapping['nombre'] = col
-                elif 'direccion' in col_lc or 'dirección' in col_lc or 'dir' in col_lc:
+                elif col_lc in ['direccion', 'dirección', 'dir']:
                     col_mapping['direccion'] = col
-                elif 'celular' in col_lc or 'telefono' in col_lc or 'tel' in col_lc:
+                elif col_lc in ['celular', 'telefono', 'tel']:
                     col_mapping['celular'] = col
-                elif 'correo' in col_lc or 'email' in col_lc or 'e-mail' in col_lc:
+                elif col_lc in ['correo', 'email', 'e-mail']:
                     col_mapping['correo'] = col
-                elif 'situacion' in col_lc or 'situación' in col_lc or 'estado' in col_lc:
+                elif col_lc in ['situacion', 'situación', 'estado']:
                     col_mapping['situacion'] = col
 
-            # Verificar que existan todas las columnas obligatorias
+            # Verificar columnas obligatorias
             cols_req = ['torre', 'dpto', 'codigo', 'nombre']
             faltantes = [c for c in cols_req if c not in col_mapping]
             if faltantes:
@@ -102,7 +107,14 @@ with tab2:
                 'codigo': df_raw[col_mapping['codigo']].astype(str).str.strip(),
                 'nombre': df_raw[col_mapping['nombre']].astype(str).str.strip(),
             })
-            # DNI es opcional, si existe usarlo
+            
+            # Formatear torre a 2 dígitos (01, 02, ...)
+            df['torre'] = df['torre'].str.zfill(2)
+            
+            # Formatear código a 5 dígitos (rellenar con cero a la izquierda)
+            df['codigo'] = df['codigo'].str.zfill(5)
+
+            # DNI (opcional)
             if 'dni' in col_mapping:
                 df['dni'] = df_raw[col_mapping['dni']].astype(str).str.strip()
             else:
@@ -115,8 +127,30 @@ with tab2:
                 else:
                     df[opt] = ""
 
-            # ----------------- VALIDACIONES -----------------
-            # 1) Torre+Depto no duplicados dentro del archivo
+            # Eliminar columnas duplicadas (por si acaso)
+            df = df.loc[:, ~df.columns.duplicated()]
+
+            # --- FUNCIÓN PARA FORMATEAR DNI / RUC ---
+            def formatear_dni(valor):
+                if pd.isna(valor) or valor == '':
+                    return valor
+                valor = str(valor).strip()
+                # Si es numérico y tiene 11 dígitos, se asume RUC, se deja igual
+                if valor.isdigit() and len(valor) == 11:
+                    return valor
+                # Si es numérico y tiene 8 dígitos, ya está bien
+                if valor.isdigit() and len(valor) == 8:
+                    return valor
+                # Si es numérico y tiene menos de 8 dígitos, rellenar con ceros a la izquierda
+                if valor.isdigit() and len(valor) < 8:
+                    return valor.zfill(8)
+                # Si no es numérico (ej. COD123) se devuelve sin cambios
+                return valor
+
+            # Aplicar formateo a la columna DNI
+            df['dni'] = df['dni'].apply(formatear_dni)
+
+            # --- VALIDACIÓN DE DUPLICADOS INTERNOS ---
             df['key'] = df['torre'] + '_' + df['dpto']
             duplicados_internos = df[df.duplicated(subset=['key'], keep=False)]
             if not duplicados_internos.empty:
@@ -124,7 +158,7 @@ with tab2:
                 st.dataframe(duplicados_internos[['torre','dpto','codigo','nombre']], use_container_width=True)
                 st.stop()
 
-            # 2) Validar contra datos existentes en Sheets
+            # --- VALIDACIÓN CONTRA DATOS EXISTENTES ---
             try:
                 existing = gsheets.leer_propietarios()
                 if not existing.empty:
@@ -138,10 +172,9 @@ with tab2:
                         st.dataframe(duplicados_exist, use_container_width=True)
                         st.stop()
             except:
-                pass  # No hay datos previos
+                pass
 
-            # ---------- Generar COD automático si no hay DNI ----------
-            # Leer contador desde Control_Codigos
+            # --- GENERAR DNI AUTOMÁTICO SI NO TIENE ---
             try:
                 spreadsheet = gsheets.get_spreadsheet()
                 try:
@@ -149,21 +182,18 @@ with tab2:
                     last_val = control.cell(1, 1).value
                     cod_counter = int(last_val) if last_val else 0
                 except:
-                    # Crear hoja de control si no existe
                     control = spreadsheet.add_worksheet(title="Control_Codigos", rows=10, cols=5)
                     control.update_cell(1, 1, "0")
                     cod_counter = 0
             except:
                 cod_counter = 0
 
-            # Asignar COD a registros sin DNI
             nuevas_filas = []
             for _, fila in df.iterrows():
                 dni = str(fila['dni']).strip()
                 if not dni or dni.lower() == 'nan':
                     cod_counter += 1
                     dni = f"COD{cod_counter}"
-
                 nuevas_filas.append({
                     'torre': fila['torre'],
                     'dpto': fila['dpto'],
@@ -176,7 +206,6 @@ with tab2:
                     'direccion': fila.get('direccion', '')
                 })
 
-            # Guardar contador actualizado
             if cod_counter > 0:
                 try:
                     control.update_cell(1, 1, str(cod_counter))
