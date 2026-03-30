@@ -131,6 +131,7 @@ def subir_excel_a_sheets(df_upload):
     sheet = get_sheet("Propietarios")
     sheet.clear()
     sheet.update(
+        "A1",  # Rango donde empezar a escribir
         [df_final.columns.tolist()] + df_final.values.tolist(),
         value_input_option="RAW"
     )
@@ -653,7 +654,7 @@ def guardar_otros(df, mes, anio):
         pass
     # Crear nueva hoja y subir datos
     worksheet = spreadsheet.add_worksheet(title=nombre_hoja, rows="1000", cols="20")
-    worksheet.update([df_clean.columns.values.tolist()] + df_clean.values.tolist())
+    worksheet.update("A1", [df_clean.columns.values.tolist()] + df_clean.values.tolist())
     return nombre_hoja
 
 def listar_hojas_otros():
@@ -684,7 +685,7 @@ def registrar_fecha_programacion(tipo: str, nombre_hoja: str, fecha_emision, fec
         worksheet = spreadsheet.worksheet("Control_Fechas")
     except gspread.exceptions.WorksheetNotFound:
         worksheet = spreadsheet.add_worksheet(title="Control_Fechas", rows="1000", cols="10")
-        worksheet.update([["TIPO", "NOMBRE_HOJA", "FECHA_EMISION", "FECHA_VENCIMIENTO"]])
+        worksheet.update("A1", [["TIPO", "NOMBRE_HOJA", "FECHA_EMISION", "FECHA_VENCIMIENTO"]])
 
     registros = worksheet.get_all_values()
     if len(registros) > 1:
