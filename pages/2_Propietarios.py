@@ -79,6 +79,14 @@ with tab2:
                     col_mapping['dni'] = col
                 elif 'nombre' in col_lc or 'apellido' in col_lc:
                     col_mapping['nombre'] = col
+                elif 'direccion' in col_lc or 'dirección' in col_lc or 'dir' in col_lc:
+                    col_mapping['direccion'] = col
+                elif 'celular' in col_lc or 'telefono' in col_lc or 'tel' in col_lc:
+                    col_mapping['celular'] = col
+                elif 'correo' in col_lc or 'email' in col_lc or 'e-mail' in col_lc:
+                    col_mapping['correo'] = col
+                elif 'situacion' in col_lc or 'situación' in col_lc or 'estado' in col_lc:
+                    col_mapping['situacion'] = col
 
             # Verificar que existan todas las columnas obligatorias
             cols_req = ['torre', 'dpto', 'codigo', 'nombre']
@@ -101,7 +109,7 @@ with tab2:
                 df['dni'] = ""
 
             # Columnas opcionales
-            for opt in ['celular', 'correo', 'situacion']:
+            for opt in ['celular', 'correo', 'situacion', 'direccion']:
                 if opt in col_mapping:
                     df[opt] = df_raw[col_mapping[opt]].astype(str).str.strip()
                 else:
@@ -164,7 +172,8 @@ with tab2:
                     'nombre': fila['nombre'],
                     'celular': fila.get('celular', ''),
                     'correo': fila.get('correo', ''),
-                    'situacion': fila.get('situacion', '')
+                    'situacion': fila.get('situacion', ''),
+                    'direccion': fila.get('direccion', '')
                 })
 
             # Guardar contador actualizado
