@@ -31,9 +31,13 @@ with tab1:
                     df["nombre"].astype(str).str.contains(filtro, case=False, na=False) |
                     df["codigo"].astype(str).str.contains(filtro, case=False, na=False) |
                     df["torre"].astype(str).str.contains(filtro, case=False, na=False))
-            mostrar = df[mask]
+            mostrar = df[mask].copy()
         else:
-            mostrar = df
+            mostrar = df.copy()
+
+        # Reemplazar NaN por cadena vacía para que no aparezca "nan"
+        mostrar = mostrar.fillna('')
+
         st.markdown(f"Mostrando **{len(mostrar)}** propietarios")
         tabla = mostrar[["codigo","torre","dpto","dni","nombre","celular","correo","situacion"]].copy()
         tabla.columns = ["Código","Torre","N° Dpto","DNI","Nombres y Apellidos","Celular","Correo","Situación"]
@@ -214,7 +218,7 @@ with tab2:
 
             # Mostrar resumen
             st.success(f"✅ {len(nuevas_filas)} registro(s) listo(s) para subir.")
-            df_preview = pd.DataFrame(nuevas_filas)
+            df_preview = pd.DataFrame(nuevas_filas).fillna('')   # Reemplazar NaN por vacío
             st.write("Vista previa:")
             st.dataframe(df_preview, use_container_width=True)
 
@@ -311,9 +315,12 @@ with tab3:
                 else:
                     total_formateado = "No disponible"
 
+                # Reemplazar NaN por cadena vacía para la visualización
+                df_deuda = df_deuda.fillna('')
+
                 def formatear_numero(valor):
                     try:
-                        if pd.isna(valor):
+                        if pd.isna(valor) or valor == '':
                             return ""
                         num = float(valor)
                         if num.is_integer():
@@ -333,7 +340,7 @@ with tab3:
                 df_deuda.index = df_deuda.index + 1
 
                 st.metric("💰 Total Deuda", total_formateado)
-                st.dataframe(df_deuda.fillna(""), use_container_width=True, height=600)
+                st.dataframe(df_deuda, use_container_width=True, height=600)
 
                 import io
                 output = io.BytesIO()
