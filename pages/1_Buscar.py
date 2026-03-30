@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from supabase_client import get_sheet, leer_propietarios
+from supabase_client import leer_propietarios, agregar_propietario, eliminar_propietario_por_id
 
 st.set_page_config(page_title="Buscar Propietario", page_icon="🔍", layout="wide")
 
@@ -25,10 +25,10 @@ try:
 
     st.markdown("### Buscar Propietario")
 
-    c1,c2,c3,c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Propietarios", len(df))
     c2.metric("Con Torre/Dpto", df[df["torre"].str.strip()!=""].shape[0])
-    c3.metric("En Alquiler", df[df["situacion"].astype(str).str.lower().str.contains("alquil",na=False)].shape[0])
+    c3.metric("En Alquiler", df[df["situacion"].astype(str).str.lower().str.contains("alquil", na=False)].shape[0])
     c4.metric("Sin DNI", df[df["dni"]==""].shape[0])
     st.markdown("---")
 
@@ -84,16 +84,25 @@ try:
                 t = str(int(n_torre)).zfill(2) if n_torre else ""
                 d = str(int(n_dpto)).zfill(3)  if n_dpto  else ""
                 cod = t + d if t and d else ""
-                nuevo = {"codigo":cod,"torre":t,"dpto":d,"dni":dni_val,
-                         "nombre":n_nombre.upper(),"direccion":n_dir,
-                         "celular":n_cel,"correo":n_correo,"situacion":n_sit}
-                sheet = get_sheet("Propietarios")
-                sheet.append_row(list(nuevo.values()))
-                st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([nuevo])], ignore_index=True)
-                st.cache_data.clear()
-                st.session_state["modo_agregar"] = False
-                st.success("Propietario agregado correctamente!")
-                st.rerun()
+                nuevo = {
+                    "codigo": cod,
+                    "torre": t,
+                    "dpto": d,
+                    "dni": dni_val,
+                    "nombre": n_nombre.upper(),
+                    "direccion": n_dir,
+                    "celular": n_cel,
+                    "correo": n_correo,
+                    "situacion": n_sit
+                }
+                if agregar_propietario(nuevo):
+                    st.cache_data.clear()
+                    st.session_state.df = cargar_datos()
+                    st.success("Propietario agregado correctamente!")
+                    st.session_state["modo_agregar"] = False
+                    st.rerun()
+                else:
+                    st.error("Error al guardar en Supabase.")
         if cancelar:
             st.session_state["modo_agregar"] = False
             st.rerun()
@@ -105,15 +114,18 @@ try:
             ce1,ce2 = st.columns(2)
             with ce1:
                 if st.button("SI, ELIMINAR", key="confirm_del"):
-                    st.session_state.df = st.session_state.df.drop(resultado.index[0]).reset_index(drop=True)
-                    st.cache_data.clear()
-                    st.success("Eliminado correctamente")
-                    st.rerun()
+                    if eliminar_propietario_por_id(p['id']):
+                        st.cache_data.clear()
+                        st.session_state.df = cargar_datos()
+                        st.success("Eliminado correctamente")
+                        st.rerun()
+                    else:
+                        st.error("Error al eliminar en Supabase.")
             with ce2:
                 if st.button("CANCELAR", key="cancel_del"):
                     st.rerun()
         else:
-            st.warning("Busca primero un propietario especifico para eliminar")
+            st.warning("Busca primero un propietario específico para eliminar")
 
     if hay_busqueda and not st.session_state.get("modo_agregar"):
         st.markdown("**Se encontraron " + str(len(resultado)) + " resultado(s)**")
@@ -143,4 +155,4 @@ try:
         st.info("Ingresa DNI, Codigo o Nombre para buscar")
 
 except Exception as e:
-    st.error(f"Error conectando con Google Sheets: {e}")
+    st.error(f"Error conectando con Supabase: {e}")
