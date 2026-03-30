@@ -146,16 +146,15 @@ with tab1:
                 df_seleccionado['Mantenimiento'] = df_seleccionado['Mantenimiento'].fillna(0)
 
                 # ================== VALIDACIONES PREVIAS ==================
+                # Aplicar formato estándar a torre, código y DNI (después de convertir a numérico)
+                df_seleccionado = formatear_campos_estandar(df_seleccionado)
+
                 # 1. Crear código único a partir de torre+departamento si no existe columna 'codigo'
                 if 'codigo' not in df_seleccionado.columns:
                     df_seleccionado['codigo'] = df_seleccionado['torre'].astype(str).str.zfill(2) + df_seleccionado['departamento'].astype(str).str.zfill(3)
                 # Asegurar que la columna dni exista (si no, crear vacía)
                 if 'dni' not in df_seleccionado.columns:
                     df_seleccionado['dni'] = ""
-
-                # Limpiar valores NaN en codigo y dni
-                df_seleccionado['codigo'] = df_seleccionado['codigo'].astype(str).str.strip().replace('nan', '')
-                df_seleccionado['dni'] = df_seleccionado['dni'].astype(str).str.strip().replace('nan', '')
 
                 # 2. Validación de unicidad (código + dni)
                 df_seleccionado['clave_unica'] = df_seleccionado['codigo'] + '_' + df_seleccionado['dni']
@@ -171,8 +170,20 @@ with tab1:
                     st.error("No se pudo cargar la lista de propietarios para validar los DNI.")
                     st.stop()
 
-                # Obtener conjunto de DNIs existentes (limpiados)
-                dni_prop = set(propietarios['dni'].astype(str).str.strip().replace('nan', ''))
+                # Normalizar DNIs de propietarios (aplicar formato 8 dígitos)
+                def normalizar_dni(dni):
+                    if not dni or dni == '':
+                        return ''
+                    dni_str = str(dni).strip()
+                    if dni_str.isdigit():
+                        if len(dni_str) == 11:
+                            return dni_str
+                        elif len(dni_str) < 8:
+                            return dni_str.zfill(8)
+                    return dni_str
+                propietarios['dni_norm'] = propietarios['dni'].apply(normalizar_dni)
+                dni_prop = set(propietarios['dni_norm'])
+
                 # Filtrar filas donde dni no está vacío
                 df_con_dni = df_seleccionado[df_seleccionado['dni'] != ''].copy()
                 dni_no_encontrados = df_con_dni[~df_con_dni['dni'].isin(dni_prop)]
