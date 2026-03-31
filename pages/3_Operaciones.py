@@ -203,7 +203,6 @@ with tab1:
                 base['departamento'] = base['departamento'].fillna(0).astype(int)
 
                 # ========== DEUDA INICIAL DEL MES (calculada con arrastre) ==========
-                # Si es el primer mes del año, usamos la deuda inicial almacenada
                 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
                 if mes == "Enero":
                     deuda_almacenada = gsheets.leer_deuda_inicial(anio)
@@ -457,7 +456,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '        <tr>\n'
+                    html += '        <tr>'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -466,21 +465,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '       </tr>\n'
+                    html += '        </tr>\n'
 
-                html += '       <tr>\n'
+                html += '        <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '       </tr>\n'
+                html += '        </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '       <tr>\n'
+                    html += '        <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '       </tr>\n'
+                    html += '        </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -508,7 +507,7 @@ with tab1:
         else:
             st.info("Haz clic en 'Generar Estado de Cuenta' para cargar los datos.")
 
-# ====================== TAB 2: RESUMEN POR TORRES ======================
+# ====================== TAB 2: RESUMEN POR TORRES (MODIFICADO PARA MOSTRAR MONTOS COMPLETOS) ======================
 with tab2:
     st.subheader("Resumen de Saldos por Departamento")
 
@@ -573,30 +572,23 @@ with tab2:
             df_resumen[col] = df_resumen[col].apply(limpiar_numero)
 
         # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO ----------
-        # Asegurar que torre y departamento sean numéricos
         df_resumen['torre'] = pd.to_numeric(df_resumen['torre'], errors='coerce').fillna(0).astype(int)
         df_resumen['departamento'] = pd.to_numeric(df_resumen['departamento'], errors='coerce').fillna(0).astype(int)
 
-        # Crear clave única combinando torre y departamento
         df_resumen['clave'] = df_resumen['torre'].astype(str) + '_' + df_resumen['departamento'].astype(str)
 
-        # Agrupar por clave
         grupo = df_resumen.groupby('clave')
 
-        # Tomar el primer registro (los cargos) de cada grupo, conservando la clave
-        primer_registro = grupo.first().reset_index()  # esto mantiene 'clave' como columna
-        # Eliminar la columna 'total_pagado' del primer registro (son los cargos, pagado=0)
+        primer_registro = grupo.first().reset_index()
         if 'total_pagado' in primer_registro.columns:
             primer_registro = primer_registro.drop(columns=['total_pagado'])
 
-        # Calcular Total Programación = mantenimiento + amortizacion + medidor + otros
         primer_registro['total_programacion'] = (
             primer_registro['mantenimiento'] +
             primer_registro['amortizacion'] +
             primer_registro['medidor'] +
             primer_registro['otros']
         )
-        # Calcular Total Deuda = deuda_inicial + mantenimiento + amortizacion + medidor + otros
         primer_registro['total_deuda'] = (
             primer_registro['deuda_inicial'] +
             primer_registro['mantenimiento'] +
@@ -605,42 +597,40 @@ with tab2:
             primer_registro['otros']
         )
 
-        # Sumar total pagado por clave, conservando la clave
-        total_pagado_por_clave = grupo['total_pagado'].sum().reset_index()  # esto crea columna 'clave'
-
-        # Combinar cargos y pagos usando la columna 'clave' en ambos
+        total_pagado_por_clave = grupo['total_pagado'].sum().reset_index()
         resumen = primer_registro.merge(total_pagado_por_clave, on='clave', how='left')
         resumen['total_pagado'] = resumen['total_pagado'].fillna(0)
 
-        # Saldo a Pagar = Total Deuda - Total Pagado
         resumen['saldo_a_pagar'] = resumen['total_deuda'] - resumen['total_pagado']
 
-        # Ordenar por torre y saldo
         resumen = resumen.sort_values(['torre', 'saldo_a_pagar'], ascending=[True, False])
 
-        # Formatear para mostrar
-        resumen['TOTAL PROGRAMACIÓN'] = resumen['total_programacion'].apply(lambda x: f"{x:,.2f}")
-        resumen['TOTAL DEUDA'] = resumen['total_deuda'].apply(lambda x: f"{x:,.2f}")
-        resumen['TOTAL PAGADO'] = resumen['total_pagado'].apply(lambda x: f"{x:,.2f}")
-        resumen['SALDO A PAGAR'] = resumen['saldo_a_pagar'].apply(lambda x: f"{x:,.2f}")
+        # Formateo con separadores de miles y dos decimales, y añadir símbolo S/
+        def formatear_moneda(valor):
+            return f"S/ {valor:,.2f}"
 
-        # Seleccionar columnas finales (sin la columna 'clave')
+        # Crear columnas formateadas para mostrar en el dataframe
+        resumen['TOTAL PROGRAMACIÓN'] = resumen['total_programacion'].apply(formatear_moneda)
+        resumen['TOTAL DEUDA'] = resumen['total_deuda'].apply(formatear_moneda)
+        resumen['TOTAL PAGADO'] = resumen['total_pagado'].apply(formatear_moneda)
+        resumen['SALDO A PAGAR'] = resumen['saldo_a_pagar'].apply(formatear_moneda)
+
+        # Columnas finales para mostrar (sin la clave)
         columnas_finales = ['torre', 'departamento', 'codigo', 'dni', 'nombre',
                             'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
-        # Asegurar que existan
         columnas_existentes = [c for c in columnas_finales if c in resumen.columns]
         resumen_final = resumen[columnas_existentes].copy()
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES',
                                  'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
 
-        # ---------- TOTALES GENERALES ----------
+        # ---------- TOTALES GENERALES CON SÍMBOLO Y FORMATO COMPLETO ----------
         total_deuda_inicial_gral = resumen['deuda_inicial'].sum()
         total_prog_gral = resumen['total_programacion'].sum()
         total_deuda_gral = resumen['total_deuda'].sum()
         total_pag_gral = resumen['total_pagado'].sum()
         total_saldo_gral = resumen['saldo_a_pagar'].sum()
 
-        # Mostrar en 5 columnas
+        # Mostrar métricas con formato completo
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("💰 Deuda Inicial", f"S/ {total_deuda_inicial_gral:,.2f}")
@@ -663,24 +653,61 @@ with tab2:
             if resumen_final.empty:
                 st.warning("No se encontraron resultados.")
 
-        # Mostrar tabla
-        st.dataframe(resumen_final, use_container_width=True, height=600)
+        # --- Mostrar dataframe con configuración de columnas para que los montos sean completamente visibles ---
+        # Usamos st.dataframe con column_config para forzar formato de moneda y ancho adecuado
+        column_config = {
+            "TOTAL PROGRAMACIÓN": st.column_config.TextColumn(
+                "TOTAL PROGRAMACIÓN",
+                help="Suma de mantenimiento + amortización + medidor + otros",
+                width="medium"
+            ),
+            "TOTAL DEUDA": st.column_config.TextColumn(
+                "TOTAL DEUDA",
+                help="Deuda inicial + programación",
+                width="medium"
+            ),
+            "TOTAL PAGADO": st.column_config.TextColumn(
+                "TOTAL PAGADO",
+                help="Total pagado en el mes",
+                width="medium"
+            ),
+            "SALDO A PAGAR": st.column_config.TextColumn(
+                "SALDO A PAGAR",
+                help="Saldo pendiente",
+                width="medium"
+            )
+        }
+        # También podemos configurar las columnas de texto para que tengan ancho suficiente
+        st.dataframe(
+            resumen_final,
+            use_container_width=True,
+            height=600,
+            column_config=column_config
+        )
 
         # Subtotales por torre
         st.subheader("Subtotales por Torre")
-        subtotales = resumen_final.groupby('TORRE')[['TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']].agg(
-            lambda x: sum(limpiar_numero(v) for v in x)
-        ).reset_index()
+        # Necesitamos calcular los subtotales a partir de los valores numéricos originales
+        # Creamos un dataframe con los datos numéricos para agrupar
+        subtotales_num = resumen.groupby('torre').agg({
+            'total_programacion': 'sum',
+            'total_deuda': 'sum',
+            'total_pagado': 'sum',
+            'saldo_a_pagar': 'sum'
+        }).reset_index()
+        subtotales_num.columns = ['TORRE', 'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
+        # Formatear a moneda
         for col in ['TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']:
-            subtotales[col] = subtotales[col].apply(lambda x: f"{x:,.2f}")
-        st.dataframe(subtotales, use_container_width=True)
+            subtotales_num[col] = subtotales_num[col].apply(formatear_moneda)
+        st.dataframe(subtotales_num, use_container_width=True)
 
         # Descarga a Excel
         import io
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Para el Excel, guardamos los valores formateados como texto para que se vean con S/ y separadores
             resumen_final.to_excel(writer, index=False, sheet_name=f"Resumen_Torres_{st.session_state.mes_actual}_{st.session_state.anio_actual}")
-            subtotales.to_excel(writer, index=False, sheet_name="Subtotales")
+            subtotales_num.to_excel(writer, index=False, sheet_name="Subtotales")
         excel_data = output.getvalue()
         st.download_button(
             label="📥 Descargar Resumen en Excel",
