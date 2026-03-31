@@ -21,9 +21,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Cabecera principal con el nombre del complejo ───────────────────────────
+# ── Logo centrado ──────────────────────────────────────────────────────────
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    try:
+        st.image("assets/logo.png", use_container_width=True)
+    except:
+        st.markdown("<p style='text-align:center;'>Logo no encontrado</p>", unsafe_allow_html=True)
+
+# ── Cabecera con texto ────────────────────────────────────────────────────
 st.markdown("""
-<div style="text-align: center; margin-bottom: 1.5rem;">
+<div style="text-align: center; margin-top: 1rem;">
     <div style="font-size: 2.5rem; font-weight: 800; color: #2C5F2D; letter-spacing: 2px;">
         GOLF ANDES
     </div>
@@ -53,7 +61,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Usuarios y contraseñas (misma lista que antes) ─────────────────────────
+# ── Usuarios y contraseñas ────────────────────────────────────────────────
 USUARIOS = {
     "admin":     hashlib.sha256("golf2026".encode()).hexdigest(),
     "nahum":     hashlib.sha256("andes2026".encode()).hexdigest(),
@@ -91,7 +99,6 @@ with st.form("login_form"):
         elif verificar(usuario.strip().lower(), password):
             st.session_state["autenticado"] = True
             st.session_state["usuario"]     = usuario.strip().lower()
-            # Si se marcó "Recordar usuario", podríamos guardarlo en cookies, pero por simplicidad solo mostramos mensaje
             if recordar:
                 st.info("La opción 'Recordar usuario' estará disponible próximamente.")
             st.success("✅ Acceso correcto!")
