@@ -466,21 +466,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '      </tr>\n'
+                    html += '       </tr>\n'
 
-                html += '      <tr>\n'
+                html += '       <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '      </tr>\n'
+                html += '       </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '      <tr>\n'
+                    html += '       <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '      </tr>\n'
+                    html += '       </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -633,26 +633,27 @@ with tab2:
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES',
                                  'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
 
-       # ---------- TOTALES GENERALES ----------
-total_deuda_inicial_gral = resumen['deuda_inicial'].sum()
-total_prog_gral = resumen['total_programacion'].sum()
-total_deuda_gral = resumen['total_deuda'].sum()
-total_pag_gral = resumen['total_pagado'].sum()
-total_saldo_gral = resumen['saldo_a_pagar'].sum()
+        # ---------- TOTALES GENERALES ----------
+        total_deuda_inicial_gral = resumen['deuda_inicial'].sum()
+        total_prog_gral = resumen['total_programacion'].sum()
+        total_deuda_gral = resumen['total_deuda'].sum()
+        total_pag_gral = resumen['total_pagado'].sum()
+        total_saldo_gral = resumen['saldo_a_pagar'].sum()
 
-# Mostrar en 5 columnas
-col1, col2, col3, col4, col5 = st.columns(5)
-with col1:
-    st.metric("💰 Deuda Inicial", f"S/ {total_deuda_inicial_gral:,.2f}")
-with col2:
-    st.metric("📊 Total Programación", f"S/ {total_prog_gral:,.2f}")
-with col3:
-    st.metric("💸 Total Deuda", f"S/ {total_deuda_gral:,.2f}")
-with col4:
-    st.metric("🏦 Total Pagado", f"S/ {total_pag_gral:,.2f}")
-with col5:
-    st.metric("⚖️ Saldo a Pagar", f"S/ {total_saldo_gral:,.2f}")
-st.markdown("---")
+        # Mostrar en 5 columnas
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("💰 Deuda Inicial", f"S/ {total_deuda_inicial_gral:,.2f}")
+        with col2:
+            st.metric("📊 Total Programación", f"S/ {total_prog_gral:,.2f}")
+        with col3:
+            st.metric("💸 Total Deuda", f"S/ {total_deuda_gral:,.2f}")
+        with col4:
+            st.metric("🏦 Total Pagado", f"S/ {total_pag_gral:,.2f}")
+        with col5:
+            st.metric("⚖️ Saldo a Pagar", f"S/ {total_saldo_gral:,.2f}")
+        st.markdown("---")
+
         # Buscador
         busqueda = st.text_input("Buscar por código o nombre", placeholder="Ej. 01101 o nombre")
         if busqueda:
