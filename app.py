@@ -21,27 +21,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# LOGO ORIGINAL (cadena base64 completa, la que ya tenías)
-LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAE4B84DASIAAhEBAxEB/8QAHQAAAQQDAQEAAAAAAAAAAAAAAAECAwQFBgcICf/EAF4QAAEDAwMCAwYCBgcDCAYBFQECAwQABREGEiEHMRNBUQgUImFxgTKRFSNCUqGxFjNCYnLB0SSCkhclNFNjorLhCRchJjVEc4KSs8LxJ1R0hZSVw9Pj/8QAGwEBAAIDAQEBAAAAAAAAAAAAAAABAgMEBQYH/8QALREBAAICAgICAQQCAgEFAAAAAAECAxESIQQxE0FRImFxBRQygZGhFSOxweH/2gAMAwEAAhEDEQA/AO9UmeaBnNJtOaEw/9k="
-
-# ── Usuarios y contraseñas ────────────────────────────────────────────────────
-USUARIOS = {
-    "admin":     hashlib.sha256("golf2026".encode()).hexdigest(),
-    "nahum":     hashlib.sha256("andes2026".encode()).hexdigest(),
-    "operador":  hashlib.sha256("operador123".encode()).hexdigest(),
-}
-
-def verificar(usuario, password):
-    if usuario in USUARIOS:
-        return USUARIOS[usuario] == hashlib.sha256(password.encode()).hexdigest()
-    return False
-
-# ── Logo centrado con borde dorado ──────────────────────────────────────────
+# ── Logo usando imagen desde assets ──────────────────────────────────────────
 st.markdown(
-    f"""
+    """
     <div style="display: flex; justify-content: center; margin-bottom: 0.5rem;">
         <div style="background: white; border-radius: 20px; padding: 0.75rem 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-            <img src="data:image/png;base64,{LOGO_B64}" style="max-width: 240px; height: auto; display: block;"/>
+            <img src="assets/logo.png" style="max-width: 240px; height: auto; display: block;"/>
         </div>
     </div>
     """,
@@ -67,6 +52,18 @@ st.markdown("""
     </p>
 </div>
 """, unsafe_allow_html=True)
+
+# ── Usuarios y contraseñas ────────────────────────────────────────────────────
+USUARIOS = {
+    "admin":     hashlib.sha256("golf2026".encode()).hexdigest(),
+    "nahum":     hashlib.sha256("andes2026".encode()).hexdigest(),
+    "operador":  hashlib.sha256("operador123".encode()).hexdigest(),
+}
+
+def verificar(usuario, password):
+    if usuario in USUARIOS:
+        return USUARIOS[usuario] == hashlib.sha256(password.encode()).hexdigest()
+    return False
 
 # Formulario
 with st.form("login_form"):
