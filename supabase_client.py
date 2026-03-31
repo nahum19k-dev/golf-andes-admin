@@ -129,6 +129,16 @@ def guardar_pagos(df: pd.DataFrame, mes: str, anio: int) -> str:
     else:
         nombre_hoja = nombre_base
 
+    # Calcular la columna ingresos si no existe
+    if 'ingresos' not in df.columns:
+        conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
+                     'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
+        # Asegurar que todas las columnas existan
+        for c in conceptos:
+            if c not in df.columns:
+                df[c] = 0
+        df['ingresos'] = df[conceptos].sum(axis=1)
+
     df_clean = limpiar_nan_para_json(df)
     datos = df_clean.to_dict(orient='records')
     supabase.table('pagos').insert({
@@ -154,21 +164,33 @@ def leer_hoja_pagos(nombre_hoja):
         df = limpiar_nombres_columnas(df)
         return df
     return pd.DataFrame()
+
 def leer_pagos_mes(mes: str, anio: int):
     supabase = get_supabase()
     response = supabase.table('pagos').select('datos').eq('mes', mes).eq('anio', anio).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
         df = limpiar_nombres_columnas(df)
-        # Ya no hacemos un rename fijo, solo devolvemos el DataFrame completo
-        # Convertir columnas numéricas (detecta automáticamente)
-        for col in df.columns:
-            if col in ['torre', 'departamento', 'mantenimiento', 'amortizacion', 'medidor',
-                       'cuota_extraordinaria', 'alquiler_parrilla', 'garantia',
-                       'sala_zoom', 'alquiler_sillas', 'tuberias', 'ingresos']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Lista de todos los conceptos que pueden formar el total
+        conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
+                     'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
+
+        # Asegurar que todas las columnas numéricas existan y sean numéricas
+        for col in conceptos + ['torre', 'departamento', 'ingresos']:
+            if col not in df.columns:
+                df[col] = 0
+            else:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+        # Calcular ingresos si no existe o si está vacía
+        if 'ingresos' not in df.columns or df['ingresos'].sum() == 0:
+            df['ingresos'] = df[conceptos].sum(axis=1)
+
+        # Convertir fecha
         if 'fecha' in df.columns:
             df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+
         return df.sort_values('fecha')
     return pd.DataFrame()
 
