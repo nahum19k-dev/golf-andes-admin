@@ -128,15 +128,15 @@ def apply_global_css():
 
 def setup_sidebar():
     """
-    Configura el sidebar con el logo y otros elementos comunes.
+    Configura el sidebar con el logo (imagen desde assets) y otros elementos comunes.
     Debe llamarse después de apply_global_css().
     """
     with st.sidebar:
-        # Mostrar logo (ajusta la ruta si tu imagen está en otra carpeta)
+        # Mostrar logo desde la carpeta assets
         try:
             st.image("assets/logo.png", use_container_width=True)
         except:
-            # Si no existe el archivo, mostrar un texto simple
+            # Si la imagen no existe, mostrar texto de respaldo
             st.markdown("""
             <div style="text-align: center; padding: 10px;">
                 <div style="font-size: 1.5rem; font-weight: bold; color: #D4AF37;">🏌️</div>
