@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import supabase_client as gsheets  # <-- CORRECCIÓN: alias gsheets
+import supabase_client as gsheets
 from datetime import datetime
 
 st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
@@ -40,7 +40,6 @@ with tab1:
             try:
                 # ========== PROPIETARIOS ==========
                 prop = gsheets.leer_propietarios()
-                st.write(f"📂 Propietarios cargados: {len(prop)} filas")
                 if prop.empty:
                     st.error("No se pudo cargar la lista de propietarios.")
                     st.stop()
@@ -66,7 +65,6 @@ with tab1:
 
                 # ========== DEUDA INICIAL ==========
                 deuda_df = gsheets.leer_deuda_inicial(anio)
-                st.write(f"📄 Deuda Inicial cargada: {len(deuda_df)} filas")
                 if deuda_df.empty:
                     st.warning(f"No se encontró 'Deuda Inicial {anio}'. Deuda = 0.")
                     deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
@@ -140,9 +138,16 @@ with tab1:
                     pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                                      'mantenimiento', 'amortizacion', 'medidor'])
                 else:
-                    for col in ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
+                    # Lista de columnas numéricas a convertir
+                    columnas_numericas = ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']
+                    for col in columnas_numericas:
                         if col in pagos_df.columns:
                             pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce').fillna(0)
+                        else:
+                            pagos_df[col] = 0
+                    # Asegurar que la columna 'ingresos' exista (si no, se crea con 0)
+                    if 'ingresos' not in pagos_df.columns:
+                        pagos_df['ingresos'] = 0
                     pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                          'mantenimiento', 'amortizacion', 'medidor']].copy()
                     pagos_df = pagos_df.sort_values('fecha')
@@ -151,7 +156,7 @@ with tab1:
                 base = base.merge(deuda_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(prog_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(amort_df, on=['torre', 'departamento'], how='left').fillna(0)
-                base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna(0)  # <-- CORREGIDO: cerré paréntesis
+                base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna(0)
 
                 # ========== CONSTRUIR MOVIMIENTOS ==========
                 movimientos = []
@@ -292,7 +297,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '      <tr>\n'
+                    html += '       <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
