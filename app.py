@@ -144,7 +144,7 @@ st.markdown("""
 # Cargar CSS global (se aplicará después del login)
 load_global_css()
 
-# Logo en base64 (el que ya tenías)
+# Logo original (copiado de tu código)
 LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAE4B84DASIAAhEBAxEB/8QAHQAAAQQDAQEAAAAAAAAAAAAAAAECAwQFBgcICf/EAF4QAAEDAwMCAwYCBgcDCAYBFQECAwQABREGEiEHMRNBUQgUImFxgTKRFSNCUqGxFjNCYnLB0SSCkhclNFNjorLhCRchJjVEc4KSs8LxJ1R0hZSVw9Pj/8QAGwEBAAIDAQEBAAAAAAAAAAAAAAABAgMEBQYH/8QALREBAAICAgICAQQCAgEFAAAAAAECAxESIQQxE0FRImFxBRQygZGhFSOxweH/2gAMAwEAAhEDEQA/AO9UmeaBnNJtOaEw/9k="
 
 # ── Usuarios y contraseñas ────────────────────────────────────────────────────
@@ -159,13 +159,12 @@ def verificar(usuario, password):
         return USUARIOS[usuario] == hashlib.sha256(password.encode()).hexdigest()
     return False
 
-# ── Página de login mejorada ─────────────────────────────────────────────
-# Logo en formato centrado
+# ── Logo centrado (versión mejorada) ──────────────────────────────────────────
 st.markdown(
     f"""
-    <div style="display: flex; justify-content: center; margin-bottom: 1rem;">
-        <div style="background: white; border-radius: 16px; padding: 0.5rem 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-            <img src="data:image/png;base64,{LOGO_B64}" style="max-width: 200px; height: auto;"/>
+    <div style="display: flex; justify-content: center; margin-bottom: 0.5rem;">
+        <div style="background: white; border-radius: 20px; padding: 0.75rem 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+            <img src="data:image/png;base64,{LOGO_B64}" style="max-width: 240px; height: auto; display: block;"/>
         </div>
     </div>
     """,
