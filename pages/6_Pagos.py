@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
-import gsheets
+import supabase_client as gsheets   # <-- CORRECCIÓN: import con alias
 from datetime import datetime
 
 st.set_page_config(page_title="Pagos Bancos", layout="wide")
@@ -27,14 +27,13 @@ with tab1:
     if uploaded_file is not None:
         try:
             # === LECTURA DEL EXCEL ===
-            # Leer todas las celdas como string para evitar interpretaciones automáticas
             df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0, dtype=str)
 
             # Eliminar columna vacía del principio y limpiar nombres
             df_raw = df_raw.iloc[:, 1:]                    # quita la primera columna NaN/Unnamed
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
-            # Mapeo flexible de columnas
+            # Mapeo flexible de columnas (incluye nuevos conceptos)
             rename_map = {}
             for col in df_raw.columns:
                 col_low = col.lower()
@@ -50,20 +49,39 @@ with tab1:
                     rename_map[col] = 'amortizacion'
                 elif 'medidor' in col_low:
                     rename_map[col] = 'medidor'
+                elif 'cuota extraordinaria' in col_low or 'extraordinaria' in col_low:
+                    rename_map[col] = 'cuota_extraordinaria'
+                elif 'alquiler parrilla' in col_low or 'parrilla' in col_low:
+                    rename_map[col] = 'alquiler_parrilla'
+                elif 'garantia' in col_low or 'garantía' in col_low:
+                    rename_map[col] = 'garantia'
+                elif 'sala zoom' in col_low or 'zoom' in col_low:
+                    rename_map[col] = 'sala_zoom'
+                elif 'alquiler de sillas' in col_low or 'sillas' in col_low:
+                    rename_map[col] = 'alquiler_sillas'
+                elif 'tuberias' in col_low or 'tuberías' in col_low:
+                    rename_map[col] = 'tuberias'
 
             df = df_raw.rename(columns=rename_map)
 
-            # Asegurar que existan las columnas de conceptos
-            for col in ['mantenimiento', 'amortizacion', 'medidor']:
+            # Lista de todos los conceptos esperados (pueden venir o no)
+            conceptos = [
+                'mantenimiento', 'amortizacion', 'medidor',
+                'cuota_extraordinaria', 'alquiler_parrilla', 'garantia',
+                'sala_zoom', 'alquiler_sillas', 'tuberias'
+            ]
+
+            # Asegurar que existan todas las columnas de conceptos (con 0 si faltan)
+            for col in conceptos:
                 if col not in df.columns:
                     df[col] = 0
 
             # Convertir a números, reemplazar vacíos por 0
-            for col in ['mantenimiento', 'amortizacion', 'medidor']:
+            for col in conceptos:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-            # Calcular monto total como suma de los tres conceptos
-            df['ingresos'] = df['mantenimiento'] + df['amortizacion'] + df['medidor']
+            # Calcular monto total como suma de TODOS los conceptos
+            df['ingresos'] = df[conceptos].sum(axis=1)
 
             # Extraer código (últimos 5 dígitos) desde la descripción
             def extraer_codigo(desc):
@@ -131,26 +149,29 @@ with tab1:
 
             if not df_coinciden.empty:
                 st.markdown("### Pagos que coincidieron")
-                cols_mostrar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'mantenimiento', 'amortizacion', 'medidor', 'ingresos']
+                # Mostrar columnas relevantes (fecha, descripcion, codigo, torre, dpto, nombre, todos los conceptos)
+                cols_mostrar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre'] + conceptos + ['ingresos']
                 if dni_col:
-                    cols_mostrar.insert(6, dni_col)
-                # Formatear números para mostrar con dos decimales
+                    # Insertar DNI después de nombre
+                    idx = cols_mostrar.index('nombre') + 1
+                    cols_mostrar.insert(idx, dni_col)
                 df_mostrar = df_coinciden[cols_mostrar].copy()
-                for col in ['mantenimiento', 'amortizacion', 'medidor', 'ingresos']:
+                # Formatear números con dos decimales para mostrar
+                for col in conceptos + ['ingresos']:
                     if col in df_mostrar.columns:
                         df_mostrar[col] = df_mostrar[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
                 st.dataframe(df_mostrar.fillna(""), use_container_width=True, height=400)
 
             if not df_no_coinciden.empty:
                 st.markdown("### Pagos sin coincidencia (revisar)")
-                cols_no = ['fecha', 'descripcion', 'codigo', 'mantenimiento', 'amortizacion', 'medidor', 'ingresos']
+                cols_no = ['fecha', 'descripcion', 'codigo'] + conceptos + ['ingresos']
                 st.dataframe(df_no_coinciden[cols_no].fillna(""), use_container_width=True, height=300)
 
             # Botón guardar
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
-                    # Seleccionar columnas a guardar
-                    columnas_guardar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'dni', 'mantenimiento', 'amortizacion', 'medidor', 'n_operacion']
+                    # Columnas a guardar (incluye todos los conceptos)
+                    columnas_guardar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'dni', 'n_operacion'] + conceptos
                     cols_existentes = [c for c in columnas_guardar if c in df_coinciden.columns]
                     df_guardar = df_coinciden[cols_existentes].copy()
 
@@ -164,60 +185,50 @@ with tab1:
 
                     # 2. FECHA: manejo de números de Excel y strings
                     if 'fecha' in df_guardar.columns:
-                        # Función auxiliar para convertir cada valor
                         def convert_fecha(val):
                             if pd.isna(val):
                                 return None
-                            # Si es número (float/int), es serie de Excel
                             if isinstance(val, (int, float)):
                                 try:
-                                    # Origen 1899-12-30 (por el error del 29/02/1900)
                                     return pd.to_datetime(val, unit='D', origin='1899-12-30')
                                 except:
                                     return None
-                            # Si es string, probar formatos
                             s = str(val).strip()
-                            # Probar formato dd/mm/yyyy
                             for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
                                 try:
                                     return pd.to_datetime(s, format=fmt, errors='raise')
                                 except:
                                     continue
-                            # Último intento con dayfirst=True
                             try:
                                 return pd.to_datetime(s, dayfirst=True, errors='coerce')
                             except:
                                 return None
 
-                        # Aplicar conversión (podría ser lento pero solo una vez por archivo)
                         df_guardar['fecha_dt'] = df_guardar['fecha'].apply(convert_fecha)
                         invalid_mask = df_guardar['fecha_dt'].isna()
                         if invalid_mask.any():
                             st.warning(f"⚠️ {invalid_mask.sum()} filas tienen fecha inválida y se guardarán sin fecha.")
-                            # Mostrar ejemplos de los valores originales que fallaron
                             problematic = df_guardar[invalid_mask][['fecha']].head(10)
                             st.write("Ejemplos de valores no reconocidos:")
                             st.dataframe(problematic)
-
-                        # Formatear a string YYYY-MM-DD
                         df_guardar['fecha'] = df_guardar['fecha_dt'].dt.strftime('%Y-%m-%d').fillna('')
                         df_guardar.drop('fecha_dt', axis=1, inplace=True)
 
                     # 3. Columnas numéricas: asegurar float y reemplazar NaN por 0
-                    for col in ['mantenimiento', 'amortizacion', 'medidor']:
+                    for col in conceptos:
                         if col in df_guardar.columns:
                             df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce').fillna(0)
 
-                    # 4. Asegurar que torre y departamento sean enteros (sin decimales) y no NaN
+                    # 4. Asegurar que torre y departamento sean enteros
                     for col in ['torre', 'departamento']:
                         if col in df_guardar.columns:
                             df_guardar[col] = pd.to_numeric(df_guardar[col], errors='coerce').fillna(0).astype(int)
 
-                    # Mostrar vista previa para depuración
+                    # Mostrar vista previa
                     st.write("**Vista previa de los datos a guardar (primeras 5 filas):**")
                     st.dataframe(df_guardar.head(5))
 
-                    # Guardar en Google Sheets
+                    # Guardar en Supabase
                     nombre_hoja = gsheets.guardar_pagos(
                         df=df_guardar,
                         mes=mes,
@@ -242,7 +253,7 @@ with tab2:
     try:
         hojas_pagos = gsheets.listar_hojas_pagos()
     except Exception as e:
-        st.error(f"No se pudo conectar con Google Sheets: {e}")
+        st.error(f"No se pudo conectar con Supabase: {e}")
         hojas_pagos = []
 
     if hojas_pagos:
@@ -250,7 +261,7 @@ with tab2:
         df_guardado = gsheets.leer_hoja_pagos(hoja_seleccionada)
 
         if not df_guardado.empty:
-            # Mapeo de nombres de columna al formato deseado
+            # Mapeo de nombres de columna al formato deseado (incluye nuevos conceptos)
             mapeo = {
                 'fecha': 'FECHA',
                 'torre': 'TORRE',
@@ -261,7 +272,13 @@ with tab2:
                 'dni': 'DNI',
                 'mantenimiento': 'MANTENIMIENTO',
                 'amortizacion': 'AMORTIZACIÓN',
-                'medidor': 'MEDIDOR'
+                'medidor': 'MEDIDOR',
+                'cuota_extraordinaria': 'CUOTA EXTRAORDINARIA',
+                'alquiler_parrilla': 'ALQUILER PARRILLA',
+                'garantia': 'GARANTÍA',
+                'sala_zoom': 'SALA ZOOM',
+                'alquiler_sillas': 'ALQUILER DE SILLAS',
+                'tuberias': 'TUBERÍAS'
             }
             df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
 
@@ -304,17 +321,23 @@ with tab2:
                 except (ValueError, TypeError):
                     return str(valor)
 
-            # Aplicar formateo a columnas numéricas
-            for col in ['TORRE', 'N°DPTO', 'PAGOS', 'N°OPERACIÓN', 'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR']:
+            # Aplicar formateo a todas las columnas numéricas (conceptos y PAGOS)
+            conceptos_viz = ['MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR',
+                             'CUOTA EXTRAORDINARIA', 'ALQUILER PARRILLA',
+                             'GARANTÍA', 'SALA ZOOM', 'ALQUILER DE SILLAS', 'TUBERÍAS', 'PAGOS']
+            for col in conceptos_viz + ['TORRE', 'N°DPTO', 'N°OPERACIÓN']:
                 if col in df_filtrado.columns:
                     df_filtrado[col] = df_filtrado[col].apply(formatear_numero)
 
             # Orden de columnas deseado
             columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN',
-                              'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR', 'PAGOS', 'N°OPERACIÓN']
+                              'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR',
+                              'CUOTA EXTRAORDINARIA', 'ALQUILER PARRILLA', 'GARANTÍA',
+                              'SALA ZOOM', 'ALQUILER DE SILLAS', 'TUBERÍAS',
+                              'PAGOS', 'N°OPERACIÓN']
             columnas_existentes = [col for col in columnas_final if col in df_filtrado.columns]
 
-            # 🔥 Hacer que el índice empiece en 1
+            # Índice empezando en 1
             df_filtrado = df_filtrado.reset_index(drop=True)
             df_filtrado.index = df_filtrado.index + 1
 
@@ -326,7 +349,6 @@ with tab2:
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_filtrado[columnas_existentes].to_excel(writer, index=False, sheet_name=hoja_seleccionada)
             excel_data = output.getvalue()
-
             st.download_button(
                 label="📥 Descargar como Excel",
                 data=excel_data,
@@ -337,7 +359,6 @@ with tab2:
             # Botón eliminar
             st.markdown("---")
             if st.button("🗑️ Eliminar esta hoja de pagos", type="secondary", key=f"del_pagos_{hoja_seleccionada}"):
-                # Extraer mes y año del nombre de la hoja para mostrar mensaje
                 nombre_parts = hoja_seleccionada.replace("Pagos ", "").split()
                 if len(nombre_parts) >= 2:
                     mes_eliminado = nombre_parts[0]
@@ -345,7 +366,6 @@ with tab2:
                     mensaje = f"Eliminado: {mes_eliminado} {anio_eliminado}"
                 else:
                     mensaje = f"Eliminado: {hoja_seleccionada}"
-
                 if gsheets.eliminar_programacion(hoja_seleccionada):
                     st.success(f"✅ {mensaje}")
                     st.cache_resource.clear()
