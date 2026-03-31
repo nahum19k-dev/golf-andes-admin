@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
-import supabase_client as gsheets   # <-- CORRECCIÓN: import con alias
+import supabase_client as gsheets  # Cambiamos la importación para usar Supabase
 from datetime import datetime
 
 st.set_page_config(page_title="Pagos Bancos", layout="wide")
@@ -27,13 +27,14 @@ with tab1:
     if uploaded_file is not None:
         try:
             # === LECTURA DEL EXCEL ===
+            # Leer todas las celdas como string para evitar interpretaciones automáticas
             df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=0, dtype=str)
 
             # Eliminar columna vacía del principio y limpiar nombres
             df_raw = df_raw.iloc[:, 1:]                    # quita la primera columna NaN/Unnamed
             df_raw.columns = df_raw.columns.str.strip().str.replace('\n', ' ').str.replace('\r', '')
 
-            # Mapeo flexible de columnas (incluye nuevos conceptos)
+            # Mapeo flexible de columnas (ampliamos para los nuevos conceptos)
             rename_map = {}
             for col in df_raw.columns:
                 col_low = col.lower()
@@ -49,29 +50,27 @@ with tab1:
                     rename_map[col] = 'amortizacion'
                 elif 'medidor' in col_low:
                     rename_map[col] = 'medidor'
-                elif 'cuota extraordinaria' in col_low or 'extraordinaria' in col_low:
+                elif 'cuota extraordinaria' in col_low or 'extraordinarias' in col_low:
                     rename_map[col] = 'cuota_extraordinaria'
-                elif 'alquiler parrilla' in col_low or 'parrilla' in col_low:
+                elif 'parrilla' in col_low:
                     rename_map[col] = 'alquiler_parrilla'
                 elif 'garantia' in col_low or 'garantía' in col_low:
                     rename_map[col] = 'garantia'
                 elif 'sala zoom' in col_low or 'zoom' in col_low:
                     rename_map[col] = 'sala_zoom'
-                elif 'alquiler de sillas' in col_low or 'sillas' in col_low:
+                elif 'sillas' in col_low:
                     rename_map[col] = 'alquiler_sillas'
                 elif 'tuberias' in col_low or 'tuberías' in col_low:
                     rename_map[col] = 'tuberias'
 
             df = df_raw.rename(columns=rename_map)
 
-            # Lista de todos los conceptos esperados (pueden venir o no)
-            conceptos = [
-                'mantenimiento', 'amortizacion', 'medidor',
-                'cuota_extraordinaria', 'alquiler_parrilla', 'garantia',
-                'sala_zoom', 'alquiler_sillas', 'tuberias'
-            ]
+            # Lista de todos los conceptos posibles
+            conceptos = ['mantenimiento', 'amortizacion', 'medidor',
+                         'cuota_extraordinaria', 'alquiler_parrilla', 'garantia',
+                         'sala_zoom', 'alquiler_sillas', 'tuberias']
 
-            # Asegurar que existan todas las columnas de conceptos (con 0 si faltan)
+            # Asegurar que existan todas las columnas de conceptos
             for col in conceptos:
                 if col not in df.columns:
                     df[col] = 0
@@ -80,7 +79,7 @@ with tab1:
             for col in conceptos:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-            # Calcular monto total como suma de TODOS los conceptos
+            # Calcular monto total como suma de todos los conceptos
             df['ingresos'] = df[conceptos].sum(axis=1)
 
             # Extraer código (últimos 5 dígitos) desde la descripción
@@ -144,33 +143,72 @@ with tab1:
 
             df_coinciden = df_coinciden.sort_values(by=['torre', 'departamento', 'nombre'])
 
+            # ========== MOSTRAR INDICADORES DE TOTALES ==========
+            st.subheader("📊 Resumen de Pagos Procesados")
+            # Calcular totales por concepto
+            totales = {}
+            for col in conceptos + ['ingresos']:
+                if col in df_coinciden.columns:
+                    totales[col] = df_coinciden[col].sum()
+                else:
+                    totales[col] = 0
+
+            # Mostrar en columnas (agrupamos de a 3)
+            conceptos_mostrar = conceptos + ['ingresos']
+            nombres_mostrar = {
+                'mantenimiento': 'Mantenimiento',
+                'amortizacion': 'Amortización',
+                'medidor': 'Medidor',
+                'cuota_extraordinaria': 'Cuota Extraordinaria',
+                'alquiler_parrilla': 'Alquiler Parrilla',
+                'garantia': 'Garantía',
+                'sala_zoom': 'Sala Zoom',
+                'alquiler_sillas': 'Alquiler Sillas',
+                'tuberias': 'Tuberías',
+                'ingresos': 'TOTAL PAGADO'
+            }
+            # Filtrar solo los que tienen valor >0 o que queremos mostrar
+            cols_mostrar = [c for c in conceptos_mostrar if totales.get(c, 0) != 0 or c == 'ingresos']
+            # Distribuir en filas de 3 columnas
+            for i in range(0, len(cols_mostrar), 3):
+                cols = st.columns(3)
+                for j, concepto in enumerate(cols_mostrar[i:i+3]):
+                    with cols[j]:
+                        st.metric(
+                            label=nombres_mostrar.get(concepto, concepto.upper()),
+                            value=f"S/ {totales[concepto]:,.2f}"
+                        )
+            st.markdown("---")
+            # =============================================
+
             # Mostrar resultados
             st.subheader("✅ Resultado del procesamiento")
 
             if not df_coinciden.empty:
                 st.markdown("### Pagos que coincidieron")
-                # Mostrar columnas relevantes (fecha, descripcion, codigo, torre, dpto, nombre, todos los conceptos)
-                cols_mostrar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre'] + conceptos + ['ingresos']
+                cols_mostrar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'mantenimiento', 'amortizacion', 'medidor', 'ingresos']
                 if dni_col:
-                    # Insertar DNI después de nombre
-                    idx = cols_mostrar.index('nombre') + 1
-                    cols_mostrar.insert(idx, dni_col)
+                    cols_mostrar.insert(6, dni_col)
+                # Añadir los nuevos conceptos si existen
+                for c in conceptos:
+                    if c not in cols_mostrar and c in df_coinciden.columns:
+                        cols_mostrar.append(c)
                 df_mostrar = df_coinciden[cols_mostrar].copy()
-                # Formatear números con dos decimales para mostrar
-                for col in conceptos + ['ingresos']:
-                    if col in df_mostrar.columns:
+                # Formatear números para mostrar con dos decimales
+                for col in df_mostrar.columns:
+                    if col in conceptos + ['ingresos']:
                         df_mostrar[col] = df_mostrar[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "")
                 st.dataframe(df_mostrar.fillna(""), use_container_width=True, height=400)
 
             if not df_no_coinciden.empty:
                 st.markdown("### Pagos sin coincidencia (revisar)")
-                cols_no = ['fecha', 'descripcion', 'codigo'] + conceptos + ['ingresos']
+                cols_no = ['fecha', 'descripcion', 'codigo', 'mantenimiento', 'amortizacion', 'medidor', 'ingresos']
                 st.dataframe(df_no_coinciden[cols_no].fillna(""), use_container_width=True, height=300)
 
             # Botón guardar
             if st.button("💾 Guardar en Google Sheets", type="primary"):
                 try:
-                    # Columnas a guardar (incluye todos los conceptos)
+                    # Seleccionar columnas a guardar
                     columnas_guardar = ['fecha', 'descripcion', 'codigo', 'torre', 'departamento', 'nombre', 'dni', 'n_operacion'] + conceptos
                     cols_existentes = [c for c in columnas_guardar if c in df_coinciden.columns]
                     df_guardar = df_coinciden[cols_existentes].copy()
@@ -261,7 +299,21 @@ with tab2:
         df_guardado = gsheets.leer_hoja_pagos(hoja_seleccionada)
 
         if not df_guardado.empty:
-            # Mapeo de nombres de columna al formato deseado (incluye nuevos conceptos)
+            # Convertir columnas a tipos adecuados
+            conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
+                         'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
+            # Asegurar que existan
+            for col in conceptos:
+                if col not in df_guardado.columns:
+                    df_guardado[col] = 0
+            # Convertir a numérico
+            for col in conceptos:
+                df_guardado[col] = pd.to_numeric(df_guardado[col], errors='coerce').fillna(0)
+            # Calcular ingresos si no existe
+            if 'ingresos' not in df_guardado.columns:
+                df_guardado['ingresos'] = df_guardado[conceptos].sum(axis=1)
+
+            # Mapeo de nombres de columna al formato deseado
             mapeo = {
                 'fecha': 'FECHA',
                 'torre': 'TORRE',
@@ -277,10 +329,10 @@ with tab2:
                 'alquiler_parrilla': 'ALQUILER PARRILLA',
                 'garantia': 'GARANTÍA',
                 'sala_zoom': 'SALA ZOOM',
-                'alquiler_sillas': 'ALQUILER DE SILLAS',
+                'alquiler_sillas': 'ALQUILER SILLAS',
                 'tuberias': 'TUBERÍAS'
             }
-            df_viz = df_guardado.rename(columns={col: mapeo[col] for col in df_guardado.columns if col in mapeo})
+            df_viz = df_guardado.rename(columns={col: mapeo.get(col, col) for col in df_guardado.columns})
 
             # Agregar columnas faltantes
             if 'DNI' not in df_viz.columns:
@@ -304,6 +356,44 @@ with tab2:
             else:
                 df_filtrado = df_viz.copy()
 
+            # ========== MOSTRAR INDICADORES DE TOTALES ==========
+            st.subheader("📊 Resumen del Período Seleccionado")
+            # Calcular totales por concepto
+            totales = {}
+            for col in conceptos + ['ingresos']:
+                col_norm = col
+                # Buscar el nombre de columna real en df_filtrado (puede estar ya mapeado)
+                col_real = next((c for c in df_filtrado.columns if c.lower() == col_norm.lower() or c == mapeo.get(col_norm, col_norm)), None)
+                if col_real and col_real in df_filtrado.columns:
+                    totales[col_norm] = pd.to_numeric(df_filtrado[col_real], errors='coerce').sum()
+                else:
+                    totales[col_norm] = 0
+
+            nombres_mostrar = {
+                'mantenimiento': 'Mantenimiento',
+                'amortizacion': 'Amortización',
+                'medidor': 'Medidor',
+                'cuota_extraordinaria': 'Cuota Extraordinaria',
+                'alquiler_parrilla': 'Alquiler Parrilla',
+                'garantia': 'Garantía',
+                'sala_zoom': 'Sala Zoom',
+                'alquiler_sillas': 'Alquiler Sillas',
+                'tuberias': 'Tuberías',
+                'ingresos': 'TOTAL PAGADO'
+            }
+            # Mostrar en filas de 3 columnas
+            cols_mostrar = [c for c in conceptos + ['ingresos'] if totales.get(c, 0) != 0 or c == 'ingresos']
+            for i in range(0, len(cols_mostrar), 3):
+                cols = st.columns(3)
+                for j, concepto in enumerate(cols_mostrar[i:i+3]):
+                    with cols[j]:
+                        st.metric(
+                            label=nombres_mostrar.get(concepto, concepto.upper()),
+                            value=f"S/ {totales[concepto]:,.2f}"
+                        )
+            st.markdown("---")
+            # =============================================
+
             # Formateo de fechas
             if 'FECHA' in df_filtrado.columns and not df_filtrado['FECHA'].isna().all():
                 df_filtrado['FECHA'] = df_filtrado['FECHA'].dt.strftime('%Y-%m-%d')
@@ -321,20 +411,19 @@ with tab2:
                 except (ValueError, TypeError):
                     return str(valor)
 
-            # Aplicar formateo a todas las columnas numéricas (conceptos y PAGOS)
-            conceptos_viz = ['MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR',
-                             'CUOTA EXTRAORDINARIA', 'ALQUILER PARRILLA',
-                             'GARANTÍA', 'SALA ZOOM', 'ALQUILER DE SILLAS', 'TUBERÍAS', 'PAGOS']
-            for col in conceptos_viz + ['TORRE', 'N°DPTO', 'N°OPERACIÓN']:
-                if col in df_filtrado.columns:
+            # Aplicar formateo a columnas numéricas
+            for col in df_filtrado.columns:
+                if col in ['TORRE', 'N°DPTO', 'PAGOS', 'N°OPERACIÓN', 'MANTENIMIENTO',
+                           'AMORTIZACIÓN', 'MEDIDOR', 'CUOTA EXTRAORDINARIA',
+                           'ALQUILER PARRILLA', 'GARANTÍA', 'SALA ZOOM',
+                           'ALQUILER SILLAS', 'TUBERÍAS']:
                     df_filtrado[col] = df_filtrado[col].apply(formatear_numero)
 
             # Orden de columnas deseado
             columnas_final = ['FECHA', 'TORRE', 'N°DPTO', 'DNI', 'NOMBRES Y APELLIDOS', 'SITUACIÓN',
-                              'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR',
-                              'CUOTA EXTRAORDINARIA', 'ALQUILER PARRILLA', 'GARANTÍA',
-                              'SALA ZOOM', 'ALQUILER DE SILLAS', 'TUBERÍAS',
-                              'PAGOS', 'N°OPERACIÓN']
+                              'MANTENIMIENTO', 'AMORTIZACIÓN', 'MEDIDOR', 'CUOTA EXTRAORDINARIA',
+                              'ALQUILER PARRILLA', 'GARANTÍA', 'SALA ZOOM', 'ALQUILER SILLAS',
+                              'TUBERÍAS', 'PAGOS', 'N°OPERACIÓN']
             columnas_existentes = [col for col in columnas_final if col in df_filtrado.columns]
 
             # Índice empezando en 1
@@ -349,6 +438,7 @@ with tab2:
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_filtrado[columnas_existentes].to_excel(writer, index=False, sheet_name=hoja_seleccionada)
             excel_data = output.getvalue()
+
             st.download_button(
                 label="📥 Descargar como Excel",
                 data=excel_data,
@@ -366,6 +456,7 @@ with tab2:
                     mensaje = f"Eliminado: {mes_eliminado} {anio_eliminado}"
                 else:
                     mensaje = f"Eliminado: {hoja_seleccionada}"
+
                 if gsheets.eliminar_programacion(hoja_seleccionada):
                     st.success(f"✅ {mensaje}")
                     st.cache_resource.clear()
