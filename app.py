@@ -21,7 +21,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Logo en base64 (el mismo que tenías)
+# LOGO ORIGINAL (cadena base64 completa, la que ya tenías)
 LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAE4B84DASIAAhEBAxEB/8QAHQAAAQQDAQEAAAAAAAAAAAAAAAECAwQFBgcICf/EAF4QAAEDAwMCAwYCBgcDCAYBFQECAwQABREGEiEHMRNBUQgUImFxgTKRFSNCUqGxFjNCYnLB0SSCkhclNFNjorLhCRchJjVEc4KSs8LxJ1R0hZSVw9Pj/8QAGwEBAAIDAQEBAAAAAAAAAAAAAAABAgMEBQYH/8QALREBAAICAgICAQQCAgEFAAAAAAECAxESIQQxE0FRImFxBRQygZGhFSOxweH/2gAMAwEAAhEDEQA/AO9UmeaBnNJtOaEw/9k="
 
 # ── Usuarios y contraseñas ────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ def verificar(usuario, password):
         return USUARIOS[usuario] == hashlib.sha256(password.encode()).hexdigest()
     return False
 
-# ── Logo centrado ──────────────────────────────────────────────────────────
+# ── Logo centrado con borde dorado ──────────────────────────────────────────
 st.markdown(
     f"""
     <div style="display: flex; justify-content: center; margin-bottom: 0.5rem;">
@@ -48,7 +48,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Card de login
+# Card de login con borde dorado
 st.markdown("""
 <div style="
     background:white;
