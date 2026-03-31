@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import supabase_client as gsheets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
 
@@ -20,6 +20,145 @@ if 'fecha_emision' not in st.session_state:
     st.session_state.fecha_emision = None
 if 'fecha_vencimiento' not in st.session_state:
     st.session_state.fecha_vencimiento = None
+
+# ========== FUNCIONES AUXILIARES ==========
+def obtener_mes_anterior(mes: str, anio: int):
+    """Devuelve (mes_anterior, anio_anterior) del mes anterior."""
+    meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+             "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
+    idx = meses.index(mes)
+    if idx == 0:
+        return "Diciembre", anio - 1
+    else:
+        return meses[idx - 1], anio
+
+def leer_otros_mes(mes: str, anio: int):
+    """Lee la tabla 'otros' y devuelve la suma de todos los conceptos por departamento."""
+    nombre_hoja = f"Otros {mes} {anio}"
+    df_otros = gsheets.leer_hoja_otros(nombre_hoja)
+    if df_otros.empty:
+        return pd.DataFrame(columns=['torre', 'departamento', 'otros'])
+
+    # Limpiar nombres de columnas
+    df_otros.columns = df_otros.columns.str.strip().str.lower()
+    # Seleccionar las columnas de conceptos
+    conceptos = ['cuota_extraordinarias', 'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
+    # Asegurar que todas existan
+    for c in conceptos:
+        if c not in df_otros.columns:
+            df_otros[c] = 0
+
+    # Convertir a numérico
+    for c in conceptos:
+        df_otros[c] = pd.to_numeric(df_otros[c], errors='coerce').fillna(0)
+
+    # Sumar conceptos
+    df_otros['otros'] = df_otros[conceptos].sum(axis=1)
+
+    # Asegurar que torre y departamento sean numéricos
+    df_otros['torre'] = pd.to_numeric(df_otros['torre'], errors='coerce')
+    df_otros['departamento'] = pd.to_numeric(df_otros['departamento'], errors='coerce')
+    df_otros = df_otros.dropna(subset=['torre', 'departamento'])
+
+    return df_otros[['torre', 'departamento', 'otros']].copy()
+
+def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
+    """Calcula el saldo final del mes anterior para cada departamento."""
+    mes_ant, anio_ant = obtener_mes_anterior(mes, anio)
+
+    # Leer datos del mes anterior
+    deuda_ant = gsheets.leer_deuda_inicial(anio_ant)
+    prog_ant = gsheets.leer_programacion(mes_ant, anio_ant)
+    amort_ant = gsheets.leer_amortizacion(mes_ant, anio_ant)
+    med_ant = gsheets.leer_medidores(mes_ant, anio_ant)
+    otros_ant = leer_otros_mes(mes_ant, anio_ant)
+    pagos_ant = gsheets.leer_pagos_mes(mes_ant, anio_ant)
+
+    # Combinar todos los conceptos por departamento
+    base = prop_df[['torre', 'departamento', 'codigo', 'dni', 'nombre']].copy()
+
+    # Deuda inicial del mes anterior (si no existe, 0)
+    if not deuda_ant.empty:
+        col_t = None; col_d = None; col_dd = None
+        for col in deuda_ant.columns:
+            col_low = col.lower()
+            if 'torre' in col_low: col_t = col
+            elif 'dpto' in col_low or 'departamento' in col_low: col_d = col
+            elif 'deuda' in col_low: col_dd = col
+        if col_t and col_d and col_dd:
+            deuda_ant = deuda_ant[[col_t, col_d, col_dd]].copy()
+            deuda_ant.rename(columns={col_t: 'torre', col_d: 'departamento', col_dd: 'deuda_inicial'}, inplace=True)
+            deuda_ant['torre'] = pd.to_numeric(deuda_ant['torre'], errors='coerce')
+            deuda_ant['departamento'] = pd.to_numeric(deuda_ant['departamento'], errors='coerce')
+            deuda_ant['deuda_inicial'] = pd.to_numeric(deuda_ant['deuda_inicial'], errors='coerce').fillna(0)
+        else:
+            deuda_ant = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
+    else:
+        deuda_ant = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
+
+    # Programación (mantenimiento)
+    if not prog_ant.empty:
+        prog_ant = prog_ant[['torre', 'departamento', 'Mantenimiento']].copy()
+        prog_ant['Mantenimiento'] = pd.to_numeric(prog_ant['Mantenimiento'], errors='coerce').fillna(0)
+    else:
+        prog_ant = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
+
+    # Amortización
+    if not amort_ant.empty:
+        amort_ant = amort_ant[['torre', 'departamento', 'amortizacion']].copy()
+        amort_ant['amortizacion'] = pd.to_numeric(amort_ant['amortizacion'], errors='coerce').fillna(0)
+    else:
+        amort_ant = pd.DataFrame(columns=['torre', 'departamento', 'amortizacion'])
+
+    # Medidores
+    if not med_ant.empty:
+        med_ant = med_ant[['torre', 'departamento', 'monto']].copy()
+        med_ant['monto'] = pd.to_numeric(med_ant['monto'], errors='coerce').fillna(0)
+        med_ant.rename(columns={'monto': 'medidor'}, inplace=True)
+    else:
+        med_ant = pd.DataFrame(columns=['torre', 'departamento', 'medidor'])
+
+    # Otros
+    if not otros_ant.empty:
+        otros_ant = otros_ant[['torre', 'departamento', 'otros']].copy()
+        otros_ant['otros'] = pd.to_numeric(otros_ant['otros'], errors='coerce').fillna(0)
+    else:
+        otros_ant = pd.DataFrame(columns=['torre', 'departamento', 'otros'])
+
+    # Pagos
+    if not pagos_ant.empty:
+        # Asegurar columna ingresos
+        if 'ingresos' not in pagos_ant.columns:
+            conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
+                         'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
+            pagos_ant['ingresos'] = pagos_ant[conceptos].sum(axis=1)
+        pagos_ant = pagos_ant.groupby(['torre', 'departamento'])['ingresos'].sum().reset_index()
+        pagos_ant.rename(columns={'ingresos': 'total_pagado'}, inplace=True)
+    else:
+        pagos_ant = pd.DataFrame(columns=['torre', 'departamento', 'total_pagado'])
+
+    # Unir todo por departamento
+    df_ant = base.merge(deuda_ant, on=['torre', 'departamento'], how='left').fillna(0)
+    df_ant = df_ant.merge(prog_ant, on=['torre', 'departamento'], how='left').fillna(0)
+    df_ant = df_ant.merge(amort_ant, on=['torre', 'departamento'], how='left').fillna(0)
+    df_ant = df_ant.merge(med_ant, on=['torre', 'departamento'], how='left').fillna(0)
+    df_ant = df_ant.merge(otros_ant, on=['torre', 'departamento'], how='left').fillna(0)
+    df_ant = df_ant.merge(pagos_ant, on=['torre', 'departamento'], how='left').fillna(0)
+
+    # Calcular saldo final del mes anterior
+    df_ant['saldo'] = (df_ant['deuda_inicial'] +
+                       df_ant['Mantenimiento'] +
+                       df_ant['amortizacion'] +
+                       df_ant['medidor'] +
+                       df_ant['otros'] -
+                       df_ant['total_pagado'])
+
+    # El saldo positivo se arrastra, el negativo se pone a 0
+    df_ant['deuda_inicial_siguiente'] = df_ant['saldo'].clip(lower=0)
+
+    return df_ant[['torre', 'departamento', 'deuda_inicial_siguiente']].rename(
+        columns={'deuda_inicial_siguiente': 'deuda_inicial'}
+    )
 
 # ========== CREAR PESTAÑAS ==========
 tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
@@ -60,30 +199,37 @@ with tab1:
                 base.rename(columns={col_torre_prop: 'torre', col_depto_prop: 'departamento'}, inplace=True)
                 base['torre'] = pd.to_numeric(base['torre'], errors='coerce')
                 base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce')
-                base['torre'] = pd.to_numeric(base['torre'], errors='coerce').fillna(0).astype(int)
-                base['departamento'] = pd.to_numeric(base['departamento'], errors='coerce').fillna(0).astype(int)
+                base['torre'] = base['torre'].fillna(0).astype(int)
+                base['departamento'] = base['departamento'].fillna(0).astype(int)
 
-                # ========== DEUDA INICIAL ==========
-                deuda_df = gsheets.leer_deuda_inicial(anio)
-                if deuda_df.empty:
-                    st.warning(f"No se encontró 'Deuda Inicial {anio}'. Deuda = 0.")
-                    deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
-                else:
-                    col_t = None; col_d = None; col_dd = None
-                    for col in deuda_df.columns:
-                        col_low = col.lower()
-                        if 'torre' in col_low: col_t = col
-                        elif 'dpto' in col_low or 'departamento' in col_low: col_d = col
-                        elif 'deuda' in col_low: col_dd = col
-                    if col_t and col_d and col_dd:
-                        deuda_df = deuda_df[[col_t, col_d, col_dd]].copy()
-                        deuda_df.rename(columns={col_t: 'torre', col_d: 'departamento', col_dd: 'deuda_inicial'}, inplace=True)
-                        deuda_df['torre'] = pd.to_numeric(deuda_df['torre'], errors='coerce')
-                        deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce')
-                        deuda_df['deuda_inicial'] = pd.to_numeric(deuda_df['deuda_inicial'], errors='coerce').fillna(0)
-                    else:
-                        st.warning("No se identificaron columnas de deuda. Se usará 0.")
+                # ========== DEUDA INICIAL DEL MES (calculada con arrastre) ==========
+                # Si es el primer mes del año, usamos la deuda inicial almacenada
+                meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
+                if mes == "Enero":
+                    deuda_almacenada = gsheets.leer_deuda_inicial(anio)
+                    if deuda_almacenada.empty:
+                        st.warning(f"No se encontró 'Deuda Inicial {anio}'. Se usará 0 como deuda inicial.")
                         deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
+                    else:
+                        col_t = None; col_d = None; col_dd = None
+                        for col in deuda_almacenada.columns:
+                            col_low = col.lower()
+                            if 'torre' in col_low: col_t = col
+                            elif 'dpto' in col_low or 'departamento' in col_low: col_d = col
+                            elif 'deuda' in col_low: col_dd = col
+                        if col_t and col_d and col_dd:
+                            deuda_df = deuda_almacenada[[col_t, col_d, col_dd]].copy()
+                            deuda_df.rename(columns={col_t: 'torre', col_d: 'departamento', col_dd: 'deuda_inicial'}, inplace=True)
+                            deuda_df['torre'] = pd.to_numeric(deuda_df['torre'], errors='coerce')
+                            deuda_df['departamento'] = pd.to_numeric(deuda_df['departamento'], errors='coerce')
+                            deuda_df['deuda_inicial'] = pd.to_numeric(deuda_df['deuda_inicial'], errors='coerce').fillna(0)
+                        else:
+                            st.warning("No se identificaron columnas de deuda. Se usará 0.")
+                            deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
+                else:
+                    # Calcular el saldo del mes anterior
+                    deuda_df = calcular_balance_mes_anterior(mes, anio, base)
+                    st.info(f"Deuda inicial del mes calculada a partir del saldo del mes anterior ({mes} {anio}).")
 
                 # ========== PROGRAMACIÓN ==========
                 prog_df = gsheets.leer_programacion(mes, anio)
@@ -131,6 +277,14 @@ with tab1:
                     med_df = med_df[['torre', 'departamento', 'monto']].copy()
                     med_df['monto'] = med_df['monto'].fillna(0)
 
+                # ========== OTROS ==========
+                otros_df = leer_otros_mes(mes, anio)
+                if otros_df.empty:
+                    st.warning(f"No se encontraron otros ingresos para {mes} {anio}. Otros = 0.")
+                    otros_df = pd.DataFrame(columns=['torre', 'departamento', 'otros'])
+                else:
+                    otros_df['otros'] = pd.to_numeric(otros_df['otros'], errors='coerce').fillna(0)
+
                 # ========== PAGOS ==========
                 pagos_df = gsheets.leer_pagos_mes(mes, anio)
                 if pagos_df.empty:
@@ -157,6 +311,7 @@ with tab1:
                 base = base.merge(prog_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(amort_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna(0)
+                base = base.merge(otros_df, on=['torre', 'departamento'], how='left').fillna(0)
 
                 # ========== CONSTRUIR MOVIMIENTOS ==========
                 movimientos = []
@@ -170,7 +325,8 @@ with tab1:
                     mantenimiento = row['Mantenimiento']
                     amort = row['amortizacion']
                     med = row['monto']
-                    total_cargos = deuda + mantenimiento + amort + med
+                    otros = row['otros']
+                    total_cargos = deuda + mantenimiento + amort + med + otros
 
                     pagos_dpto = pagos_df[(pagos_df['torre'] == torre) & (pagos_df['departamento'] == dpto)].copy()
                     pagos_dpto = pagos_dpto.sort_values('fecha')
@@ -186,11 +342,13 @@ with tab1:
                         'mantenimiento': mantenimiento,
                         'amortizacion': amort,
                         'medidor': med,
+                        'otros': otros,
                         'total_programacion': total_cargos,
                         'n_operacion': '',
                         'mantenimiento_pago': 0,
                         'amortizacion_pago': 0,
                         'medidor_pago': 0,
+                        'otros_pago': 0,
                         'total_pagado': 0,
                         'saldo': total_cargos
                     })
@@ -209,11 +367,13 @@ with tab1:
                             'mantenimiento': '',
                             'amortizacion': '',
                             'medidor': '',
+                            'otros': '',
                             'total_programacion': '',
                             'n_operacion': pago['n_operacion'],
                             'mantenimiento_pago': pago['mantenimiento'],
                             'amortizacion_pago': pago['amortizacion'],
                             'medidor_pago': pago['medidor'],
+                            'otros_pago': pago.get('otros', 0),
                             'total_pagado': pago['ingresos'],
                             'saldo': saldo
                         })
@@ -233,16 +393,16 @@ with tab1:
                     except:
                         return val
 
-                for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
-                            'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']:
+                for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion',
+                            'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'otros_pago', 'total_pagado', 'saldo']:
                     if col in df_mov.columns:
                         df_mov[col] = df_mov[col].apply(fmt_num)
 
                 # Seleccionar y ordenar columnas finales (incluyendo torre y departamento)
                 columnas_orden = [
                     'fecha', 'torre', 'departamento', 'codigo', 'dni', 'nombre',
-                    'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion',
-                    'n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo'
+                    'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion',
+                    'n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'otros_pago', 'total_pagado', 'saldo'
                 ]
                 columnas_existentes = [c for c in columnas_orden if c in df_mov.columns]
                 df_final = df_mov[columnas_existentes].copy()
@@ -279,8 +439,8 @@ with tab1:
 
                 # ========== GENERAR TABLA HTML CON CABECERAS AGRUPADAS ==========
                 col_names = list(df_final.columns)
-                grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_programacion']
-                grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'total_pagado', 'saldo']
+                grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion']
+                grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'otros_pago', 'total_pagado', 'saldo']
 
                 prog_indices = [i for i, col in enumerate(col_names) if col in grupo_prog]
                 pagos_indices = [i for i, col in enumerate(col_names) if col in grupo_pagos]
@@ -297,7 +457,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '       <tr>\n'
+                    html += '        <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -383,11 +543,13 @@ with tab2:
                 col_mapping['amortizacion'] = col
             elif 'medidor' in col and 'pago' not in col:
                 col_mapping['medidor'] = col
+            elif 'otros' in col and 'pago' not in col:
+                col_mapping['otros'] = col
             elif 'total_pagado' in col:
                 col_mapping['total_pagado'] = col
 
         esenciales = ['torre', 'departamento', 'codigo', 'dni', 'nombre',
-                      'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_pagado']
+                      'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_pagado']
         faltan = [col for col in esenciales if col not in col_mapping]
         if faltan:
             st.error(f"Faltan columnas esenciales: {faltan}. Columnas disponibles: {list(df_resumen.columns)}")
@@ -407,7 +569,7 @@ with tab2:
             except:
                 return 0.0
 
-        for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'total_pagado']:
+        for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_pagado']:
             df_resumen[col] = df_resumen[col].apply(limpiar_numero)
 
         # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO ----------
@@ -427,18 +589,20 @@ with tab2:
         if 'total_pagado' in primer_registro.columns:
             primer_registro = primer_registro.drop(columns=['total_pagado'])
 
-        # Calcular Total Programación = mantenimiento + amortizacion + medidor
+        # Calcular Total Programación = mantenimiento + amortizacion + medidor + otros
         primer_registro['total_programacion'] = (
             primer_registro['mantenimiento'] +
             primer_registro['amortizacion'] +
-            primer_registro['medidor']
+            primer_registro['medidor'] +
+            primer_registro['otros']
         )
-        # Calcular Total Deuda = deuda_inicial + mantenimiento + amortizacion + medidor
+        # Calcular Total Deuda = deuda_inicial + mantenimiento + amortizacion + medidor + otros
         primer_registro['total_deuda'] = (
             primer_registro['deuda_inicial'] +
             primer_registro['mantenimiento'] +
             primer_registro['amortizacion'] +
-            primer_registro['medidor']
+            primer_registro['medidor'] +
+            primer_registro['otros']
         )
 
         # Sumar total pagado por clave, conservando la clave
