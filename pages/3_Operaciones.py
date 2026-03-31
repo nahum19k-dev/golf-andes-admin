@@ -5,6 +5,23 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
 
+# CSS personalizado para evitar truncamiento en st.metric
+st.markdown("""
+<style>
+    /* Evitar que el valor de la métrica se recorte con puntos suspensivos */
+    div[data-testid="stMetricValue"] {
+        white-space: normal !important;
+        word-break: keep-all;
+        overflow-x: visible !important;
+        text-overflow: clip !important;
+    }
+    /* Asegurar que el contenedor de la métrica tenga espacio suficiente */
+    div[data-testid="stMetric"] {
+        min-width: 140px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📊 Operaciones - Estado de Cuenta por Departamento")
 
 # ========== INICIALIZAR SESSION_STATE ==========
@@ -21,9 +38,8 @@ if 'fecha_emision' not in st.session_state:
 if 'fecha_vencimiento' not in st.session_state:
     st.session_state.fecha_vencimiento = None
 
-# ========== FUNCIONES AUXILIARES ==========
+# ========== FUNCIONES AUXILIARES (igual que antes) ==========
 def obtener_mes_anterior(mes: str, anio: int):
-    """Devuelve (mes_anterior, anio_anterior) del mes anterior."""
     meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
     idx = meses.index(mes)
@@ -33,40 +49,28 @@ def obtener_mes_anterior(mes: str, anio: int):
         return meses[idx - 1], anio
 
 def leer_otros_mes(mes: str, anio: int):
-    """Lee la tabla 'otros' y devuelve la suma de todos los conceptos por departamento."""
     nombre_hoja = f"Otros {mes} {anio}"
     df_otros = gsheets.leer_hoja_otros(nombre_hoja)
     if df_otros.empty:
         return pd.DataFrame(columns=['torre', 'departamento', 'otros'])
 
-    # Limpiar nombres de columnas
     df_otros.columns = df_otros.columns.str.strip().str.lower()
-    # Seleccionar las columnas de conceptos
     conceptos = ['cuota_extraordinarias', 'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
-    # Asegurar que todas existan
     for c in conceptos:
         if c not in df_otros.columns:
             df_otros[c] = 0
-
-    # Convertir a numérico
     for c in conceptos:
         df_otros[c] = pd.to_numeric(df_otros[c], errors='coerce').fillna(0)
-
-    # Sumar conceptos
     df_otros['otros'] = df_otros[conceptos].sum(axis=1)
 
-    # Asegurar que torre y departamento sean numéricos
     df_otros['torre'] = pd.to_numeric(df_otros['torre'], errors='coerce')
     df_otros['departamento'] = pd.to_numeric(df_otros['departamento'], errors='coerce')
     df_otros = df_otros.dropna(subset=['torre', 'departamento'])
-
     return df_otros[['torre', 'departamento', 'otros']].copy()
 
 def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
-    """Calcula el saldo final del mes anterior para cada departamento."""
     mes_ant, anio_ant = obtener_mes_anterior(mes, anio)
 
-    # Leer datos del mes anterior
     deuda_ant = gsheets.leer_deuda_inicial(anio_ant)
     prog_ant = gsheets.leer_programacion(mes_ant, anio_ant)
     amort_ant = gsheets.leer_amortizacion(mes_ant, anio_ant)
@@ -74,10 +78,9 @@ def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
     otros_ant = leer_otros_mes(mes_ant, anio_ant)
     pagos_ant = gsheets.leer_pagos_mes(mes_ant, anio_ant)
 
-    # Combinar todos los conceptos por departamento
     base = prop_df[['torre', 'departamento', 'codigo', 'dni', 'nombre']].copy()
 
-    # Deuda inicial del mes anterior (si no existe, 0)
+    # Deuda inicial
     if not deuda_ant.empty:
         col_t = None; col_d = None; col_dd = None
         for col in deuda_ant.columns:
@@ -96,7 +99,7 @@ def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
     else:
         deuda_ant = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
 
-    # Programación (mantenimiento)
+    # Programación
     if not prog_ant.empty:
         prog_ant = prog_ant[['torre', 'departamento', 'Mantenimiento']].copy()
         prog_ant['Mantenimiento'] = pd.to_numeric(prog_ant['Mantenimiento'], errors='coerce').fillna(0)
@@ -127,7 +130,6 @@ def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
 
     # Pagos
     if not pagos_ant.empty:
-        # Asegurar columna ingresos
         if 'ingresos' not in pagos_ant.columns:
             conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
                          'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
@@ -137,7 +139,6 @@ def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
     else:
         pagos_ant = pd.DataFrame(columns=['torre', 'departamento', 'total_pagado'])
 
-    # Unir todo por departamento
     df_ant = base.merge(deuda_ant, on=['torre', 'departamento'], how='left').fillna(0)
     df_ant = df_ant.merge(prog_ant, on=['torre', 'departamento'], how='left').fillna(0)
     df_ant = df_ant.merge(amort_ant, on=['torre', 'departamento'], how='left').fillna(0)
@@ -145,7 +146,6 @@ def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
     df_ant = df_ant.merge(otros_ant, on=['torre', 'departamento'], how='left').fillna(0)
     df_ant = df_ant.merge(pagos_ant, on=['torre', 'departamento'], how='left').fillna(0)
 
-    # Calcular saldo final del mes anterior
     df_ant['saldo'] = (df_ant['deuda_inicial'] +
                        df_ant['Mantenimiento'] +
                        df_ant['amortizacion'] +
@@ -153,9 +153,7 @@ def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
                        df_ant['otros'] -
                        df_ant['total_pagado'])
 
-    # El saldo positivo se arrastra, el negativo se pone a 0
     df_ant['deuda_inicial_siguiente'] = df_ant['saldo'].clip(lower=0)
-
     return df_ant[['torre', 'departamento', 'deuda_inicial_siguiente']].rename(
         columns={'deuda_inicial_siguiente': 'deuda_inicial'}
     )
@@ -202,7 +200,7 @@ with tab1:
                 base['torre'] = base['torre'].fillna(0).astype(int)
                 base['departamento'] = base['departamento'].fillna(0).astype(int)
 
-                # ========== DEUDA INICIAL DEL MES (calculada con arrastre) ==========
+                # ========== DEUDA INICIAL DEL MES ==========
                 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
                 if mes == "Enero":
                     deuda_almacenada = gsheets.leer_deuda_inicial(anio)
@@ -226,7 +224,6 @@ with tab1:
                             st.warning("No se identificaron columnas de deuda. Se usará 0.")
                             deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
                 else:
-                    # Calcular el saldo del mes anterior
                     deuda_df = calcular_balance_mes_anterior(mes, anio, base)
                     st.info(f"Deuda inicial del mes calculada a partir del saldo del mes anterior ({mes} {anio}).")
 
@@ -291,14 +288,12 @@ with tab1:
                     pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                                      'mantenimiento', 'amortizacion', 'medidor'])
                 else:
-                    # Lista de columnas numéricas a convertir
                     columnas_numericas = ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']
                     for col in columnas_numericas:
                         if col in pagos_df.columns:
                             pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce').fillna(0)
                         else:
                             pagos_df[col] = 0
-                    # Asegurar que la columna 'ingresos' exista (si no, se crea con 0)
                     if 'ingresos' not in pagos_df.columns:
                         pagos_df['ingresos'] = 0
                     pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
@@ -379,7 +374,6 @@ with tab1:
 
                 df_mov = pd.DataFrame(movimientos)
 
-                # Formateo numérico
                 def fmt_num(val):
                     try:
                         if pd.isna(val) or val == '':
@@ -397,7 +391,6 @@ with tab1:
                     if col in df_mov.columns:
                         df_mov[col] = df_mov[col].apply(fmt_num)
 
-                # Seleccionar y ordenar columnas finales (incluyendo torre y departamento)
                 columnas_orden = [
                     'fecha', 'torre', 'departamento', 'codigo', 'dni', 'nombre',
                     'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion',
@@ -408,18 +401,15 @@ with tab1:
                 df_final = df_final.reset_index(drop=True)
                 df_final.insert(0, '#', range(1, len(df_final)+1))
 
-                # Guardar en session_state para la segunda pestaña
                 st.session_state.df_final = df_final.copy()
                 st.session_state.datos_cargados = True
                 st.session_state.mes_actual = mes
                 st.session_state.anio_actual = anio
 
-                # Obtener y guardar las fechas del período (Mantenimiento como referencia)
                 fecha_emi, fecha_ven = gsheets.obtener_fechas_programacion("Mantenimiento", mes, anio)
                 st.session_state.fecha_emision = fecha_emi
                 st.session_state.fecha_vencimiento = fecha_ven
 
-                # Aplicar filtro por código si se especificó
                 if codigo_filtro.strip():
                     mask = df_final['codigo'].astype(str).str.contains(codigo_filtro.strip(), case=False, na=False)
                     df_final = df_final[mask].copy()
@@ -430,13 +420,12 @@ with tab1:
                         df_final.index = df_final.index + 1
                         df_final['#'] = df_final.index
 
-                # Mostrar rango de fechas si existe
                 if fecha_emi and fecha_ven:
                     st.info(f"📅 **Período de programación:** {fecha_emi.strftime('%d/%m/%Y')} al {fecha_ven.strftime('%d/%m/%Y')}")
                 else:
                     st.warning("⚠️ No se encontró información de fechas para este período en la hoja de control.")
 
-                # ========== GENERAR TABLA HTML CON CABECERAS AGRUPADAS ==========
+                # Mostrar tabla HTML (igual que antes)
                 col_names = list(df_final.columns)
                 grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion']
                 grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'otros_pago', 'total_pagado', 'saldo']
@@ -479,12 +468,11 @@ with tab1:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '        </tr>\n'
+                    html += '        <tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
 
-                # Descarga a Excel
                 import io
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -507,7 +495,7 @@ with tab1:
         else:
             st.info("Haz clic en 'Generar Estado de Cuenta' para cargar los datos.")
 
-# ====================== TAB 2: RESUMEN POR TORRES (MODIFICADO PARA MOSTRAR MONTOS COMPLETOS) ======================
+# ====================== TAB 2: RESUMEN POR TORRES ======================
 with tab2:
     st.subheader("Resumen de Saldos por Departamento")
 
@@ -516,7 +504,7 @@ with tab2:
     else:
         df_resumen = st.session_state.df_final.copy()
 
-        # ---------- LIMPIEZA DE COLUMNAS ----------
+        # Limpieza de columnas
         if isinstance(df_resumen.columns, pd.MultiIndex):
             df_resumen.columns = [col[1] if col[1] else col[0] for col in df_resumen.columns]
 
@@ -557,7 +545,6 @@ with tab2:
         df_resumen = df_resumen.rename(columns={col_mapping[k]: k for k in esenciales})
         df_resumen = df_resumen[esenciales]
 
-        # ---------- FUNCIÓN PARA LIMPIAR NÚMEROS ----------
         def limpiar_numero(x):
             if pd.isna(x):
                 return 0.0
@@ -571,7 +558,6 @@ with tab2:
         for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_pagado']:
             df_resumen[col] = df_resumen[col].apply(limpiar_numero)
 
-        # ---------- AGREGACIÓN POR TORRE+DEPARTAMENTO ----------
         df_resumen['torre'] = pd.to_numeric(df_resumen['torre'], errors='coerce').fillna(0).astype(int)
         df_resumen['departamento'] = pd.to_numeric(df_resumen['departamento'], errors='coerce').fillna(0).astype(int)
 
@@ -605,17 +591,15 @@ with tab2:
 
         resumen = resumen.sort_values(['torre', 'saldo_a_pagar'], ascending=[True, False])
 
-        # Formateo con separadores de miles y dos decimales, y añadir símbolo S/
+        # Formateo de moneda
         def formatear_moneda(valor):
             return f"S/ {valor:,.2f}"
 
-        # Crear columnas formateadas para mostrar en el dataframe
         resumen['TOTAL PROGRAMACIÓN'] = resumen['total_programacion'].apply(formatear_moneda)
         resumen['TOTAL DEUDA'] = resumen['total_deuda'].apply(formatear_moneda)
         resumen['TOTAL PAGADO'] = resumen['total_pagado'].apply(formatear_moneda)
         resumen['SALDO A PAGAR'] = resumen['saldo_a_pagar'].apply(formatear_moneda)
 
-        # Columnas finales para mostrar (sin la clave)
         columnas_finales = ['torre', 'departamento', 'codigo', 'dni', 'nombre',
                             'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
         columnas_existentes = [c for c in columnas_finales if c in resumen.columns]
@@ -623,14 +607,14 @@ with tab2:
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES',
                                  'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
 
-        # ---------- TOTALES GENERALES CON SÍMBOLO Y FORMATO COMPLETO ----------
+        # ---------- TOTALES GENERALES ----------
         total_deuda_inicial_gral = resumen['deuda_inicial'].sum()
         total_prog_gral = resumen['total_programacion'].sum()
         total_deuda_gral = resumen['total_deuda'].sum()
         total_pag_gral = resumen['total_pagado'].sum()
         total_saldo_gral = resumen['saldo_a_pagar'].sum()
 
-        # Mostrar métricas con formato completo
+        # Mostrar métricas con CSS para que no se trunquen
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("💰 Deuda Inicial", f"S/ {total_deuda_inicial_gral:,.2f}")
@@ -653,42 +637,17 @@ with tab2:
             if resumen_final.empty:
                 st.warning("No se encontraron resultados.")
 
-        # --- Mostrar dataframe con configuración de columnas para que los montos sean completamente visibles ---
-        # Usamos st.dataframe con column_config para forzar formato de moneda y ancho adecuado
+        # Mostrar dataframe con configuración de ancho
         column_config = {
-            "TOTAL PROGRAMACIÓN": st.column_config.TextColumn(
-                "TOTAL PROGRAMACIÓN",
-                help="Suma de mantenimiento + amortización + medidor + otros",
-                width="medium"
-            ),
-            "TOTAL DEUDA": st.column_config.TextColumn(
-                "TOTAL DEUDA",
-                help="Deuda inicial + programación",
-                width="medium"
-            ),
-            "TOTAL PAGADO": st.column_config.TextColumn(
-                "TOTAL PAGADO",
-                help="Total pagado en el mes",
-                width="medium"
-            ),
-            "SALDO A PAGAR": st.column_config.TextColumn(
-                "SALDO A PAGAR",
-                help="Saldo pendiente",
-                width="medium"
-            )
+            "TOTAL PROGRAMACIÓN": st.column_config.TextColumn("TOTAL PROGRAMACIÓN", width="medium"),
+            "TOTAL DEUDA": st.column_config.TextColumn("TOTAL DEUDA", width="medium"),
+            "TOTAL PAGADO": st.column_config.TextColumn("TOTAL PAGADO", width="medium"),
+            "SALDO A PAGAR": st.column_config.TextColumn("SALDO A PAGAR", width="medium")
         }
-        # También podemos configurar las columnas de texto para que tengan ancho suficiente
-        st.dataframe(
-            resumen_final,
-            use_container_width=True,
-            height=600,
-            column_config=column_config
-        )
+        st.dataframe(resumen_final, use_container_width=True, height=600, column_config=column_config)
 
         # Subtotales por torre
         st.subheader("Subtotales por Torre")
-        # Necesitamos calcular los subtotales a partir de los valores numéricos originales
-        # Creamos un dataframe con los datos numéricos para agrupar
         subtotales_num = resumen.groupby('torre').agg({
             'total_programacion': 'sum',
             'total_deuda': 'sum',
@@ -696,7 +655,6 @@ with tab2:
             'saldo_a_pagar': 'sum'
         }).reset_index()
         subtotales_num.columns = ['TORRE', 'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
-        # Formatear a moneda
         for col in ['TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']:
             subtotales_num[col] = subtotales_num[col].apply(formatear_moneda)
         st.dataframe(subtotales_num, use_container_width=True)
@@ -705,7 +663,6 @@ with tab2:
         import io
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Para el Excel, guardamos los valores formateados como texto para que se vean con S/ y separadores
             resumen_final.to_excel(writer, index=False, sheet_name=f"Resumen_Torres_{st.session_state.mes_actual}_{st.session_state.anio_actual}")
             subtotales_num.to_excel(writer, index=False, sheet_name="Subtotales")
         excel_data = output.getvalue()
