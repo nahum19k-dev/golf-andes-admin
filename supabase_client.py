@@ -154,26 +154,18 @@ def leer_hoja_pagos(nombre_hoja):
         df = limpiar_nombres_columnas(df)
         return df
     return pd.DataFrame()
-
 def leer_pagos_mes(mes: str, anio: int):
     supabase = get_supabase()
     response = supabase.table('pagos').select('datos').eq('mes', mes).eq('anio', anio).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
         df = limpiar_nombres_columnas(df)
-        rename_map = {
-            'fecha': 'fecha',
-            'torre': 'torre',
-            'departamento': 'departamento',
-            'n_operacion': 'n_operacion',
-            'mantenimiento': 'mantenimiento',
-            'amortizacion': 'amortizacion',
-            'medidor': 'medidor',
-            'ingresos': 'ingresos'
-        }
-        df = df.rename(columns={col: rename_map.get(col, col) for col in df.columns})
-        for col in ['torre', 'departamento', 'mantenimiento', 'amortizacion', 'medidor', 'ingresos']:
-            if col in df.columns:
+        # Ya no hacemos un rename fijo, solo devolvemos el DataFrame completo
+        # Convertir columnas numéricas (detecta automáticamente)
+        for col in df.columns:
+            if col in ['torre', 'departamento', 'mantenimiento', 'amortizacion', 'medidor',
+                       'cuota_extraordinaria', 'alquiler_parrilla', 'garantia',
+                       'sala_zoom', 'alquiler_sillas', 'tuberias', 'ingresos']:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         if 'fecha' in df.columns:
             df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
