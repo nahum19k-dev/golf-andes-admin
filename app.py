@@ -9,10 +9,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Aplicar estilos globales (para que botones, etc., tengan los colores de la marca)
+# Aplicar estilos globales
 apply_global_css()
 
-# CSS específico para ocultar el sidebar en login y centrar el formulario
+# Ocultar sidebar en login
 st.markdown("""
 <style>
 [data-testid="stSidebar"] { display: none; }
@@ -21,14 +21,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Logo centrado con st.image ──────────────────────────────────────────────
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    try:
-        st.image("assets/logo.png", use_container_width=True)
-    except:
-        # Si el archivo no existe, mostrar texto alternativo
-        st.markdown("<h3 style='text-align:center; color:#2C5F2D;'>Residencial Jolfandes</h3>", unsafe_allow_html=True)
+# ── Cabecera principal con el nombre del complejo ───────────────────────────
+st.markdown("""
+<div style="text-align: center; margin-bottom: 1.5rem;">
+    <div style="font-size: 2.5rem; font-weight: 800; color: #2C5F2D; letter-spacing: 2px;">
+        GOLF ANDES
+    </div>
+    <div style="font-size: 1.2rem; font-weight: 500; color: #D4AF37; margin-top: -5px;">
+        ADMINISTRACIÓN
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # Card de login con borde dorado
 st.markdown("""
@@ -50,7 +53,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Usuarios y contraseñas ────────────────────────────────────────────────────
+# ── Usuarios y contraseñas (misma lista que antes) ─────────────────────────
 USUARIOS = {
     "admin":     hashlib.sha256("golf2026".encode()).hexdigest(),
     "nahum":     hashlib.sha256("andes2026".encode()).hexdigest(),
@@ -67,6 +70,18 @@ with st.form("login_form"):
     st.markdown("<br>", unsafe_allow_html=True)
     usuario  = st.text_input("👤  Usuario:", placeholder="Ingrese su usuario")
     password = st.text_input("🔒  Contraseña:", type="password", placeholder="Ingrese su contraseña")
+    
+    # Opciones adicionales
+    col1, col2 = st.columns(2)
+    with col1:
+        recordar = st.checkbox("Recordar usuario")
+    with col2:
+        st.markdown("""
+        <div style="text-align: right;">
+            <a href="#" style="color:#2C5F2D; text-decoration: none;">Olvidé mi contraseña</a>
+        </div>
+        """, unsafe_allow_html=True)
+    
     st.markdown("<br>", unsafe_allow_html=True)
     submit = st.form_submit_button("🔐  INGRESAR", use_container_width=True)
 
@@ -76,6 +91,9 @@ with st.form("login_form"):
         elif verificar(usuario.strip().lower(), password):
             st.session_state["autenticado"] = True
             st.session_state["usuario"]     = usuario.strip().lower()
+            # Si se marcó "Recordar usuario", podríamos guardarlo en cookies, pero por simplicidad solo mostramos mensaje
+            if recordar:
+                st.info("La opción 'Recordar usuario' estará disponible próximamente.")
             st.success("✅ Acceso correcto!")
             st.switch_page("pages/1_Buscar.py")
         else:
