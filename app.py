@@ -21,17 +21,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Logo usando imagen desde assets ──────────────────────────────────────────
-st.markdown(
-    """
-    <div style="display: flex; justify-content: center; margin-bottom: 0.5rem;">
-        <div style="background: white; border-radius: 20px; padding: 0.75rem 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-            <img src="assets/logo.png" style="max-width: 240px; height: auto; display: block;"/>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# ── Logo centrado con st.image ──────────────────────────────────────────────
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    try:
+        st.image("assets/logo.png", use_container_width=True)
+    except:
+        # Si el archivo no existe, mostrar texto alternativo
+        st.markdown("<h3 style='text-align:center; color:#2C5F2D;'>Residencial Jolfandes</h3>", unsafe_allow_html=True)
 
 # Card de login con borde dorado
 st.markdown("""
