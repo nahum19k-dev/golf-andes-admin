@@ -21,12 +21,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Logo centrado y más grande ──────────────────────────────────────────
-col1, col2, col3 = st.columns([1, 3, 1])  # columna central más ancha para agrandar el logo
+# ── Logo centrado y más grande ──────────────────────────────────────────────
+col1, col2, col3 = st.columns([1, 3, 1])
 with col2:
     try:
-        # Ajusta el ancho con el parámetro width (por ejemplo 300 píxeles)
-        st.image("assets/logo.png", width=320)
+        # Aumentar el tamaño a 400 píxeles de ancho
+        st.image("assets/logo.png", width=400)
     except:
         st.markdown("<p style='text-align:center;'>Logo no encontrado</p>", unsafe_allow_html=True)
 
