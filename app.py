@@ -21,25 +21,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Logo centrado ──────────────────────────────────────────────────────────
-col1, col2, col3 = st.columns([1, 2, 1])
+# ── Logo centrado y más grande ──────────────────────────────────────────
+col1, col2, col3 = st.columns([1, 3, 1])  # columna central más ancha para agrandar el logo
 with col2:
     try:
-        st.image("assets/logo.png", use_container_width=True)
+        # Ajusta el ancho con el parámetro width (por ejemplo 300 píxeles)
+        st.image("assets/logo.png", width=320)
     except:
         st.markdown("<p style='text-align:center;'>Logo no encontrado</p>", unsafe_allow_html=True)
-
-# ── Cabecera con texto ────────────────────────────────────────────────────
-st.markdown("""
-<div style="text-align: center; margin-top: 1rem;">
-    <div style="font-size: 2.5rem; font-weight: 800; color: #2C5F2D; letter-spacing: 2px;">
-        GOLF ANDES
-    </div>
-    <div style="font-size: 1.2rem; font-weight: 500; color: #D4AF37; margin-top: -5px;">
-        ADMINISTRACIÓN
-    </div>
-</div>
-""", unsafe_allow_html=True)
 
 # Card de login con borde dorado
 st.markdown("""
