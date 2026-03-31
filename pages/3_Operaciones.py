@@ -5,23 +5,6 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
 
-# CSS personalizado para evitar truncamiento en st.metric
-st.markdown("""
-<style>
-    /* Evitar que el valor de la métrica se recorte con puntos suspensivos */
-    div[data-testid="stMetricValue"] {
-        white-space: normal !important;
-        word-break: keep-all;
-        overflow-x: visible !important;
-        text-overflow: clip !important;
-    }
-    /* Asegurar que el contenedor de la métrica tenga espacio suficiente */
-    div[data-testid="stMetric"] {
-        min-width: 140px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 st.title("📊 Operaciones - Estado de Cuenta por Departamento")
 
 # ========== INICIALIZAR SESSION_STATE ==========
@@ -38,7 +21,7 @@ if 'fecha_emision' not in st.session_state:
 if 'fecha_vencimiento' not in st.session_state:
     st.session_state.fecha_vencimiento = None
 
-# ========== FUNCIONES AUXILIARES (igual que antes) ==========
+# ========== FUNCIONES AUXILIARES ==========
 def obtener_mes_anterior(mes: str, anio: int):
     meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
@@ -445,7 +428,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '        <tr>'
+                    html += '         <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -454,21 +437,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '        </tr>\n'
+                    html += '         </tr>\n'
 
-                html += '        <tr>\n'
+                html += '         <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '        </tr>\n'
+                html += '         </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '        <tr>\n'
+                    html += '         <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '        <tr>\n'
+                    html += '         </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -495,7 +478,7 @@ with tab1:
         else:
             st.info("Haz clic en 'Generar Estado de Cuenta' para cargar los datos.")
 
-# ====================== TAB 2: RESUMEN POR TORRES ======================
+# ====================== TAB 2: RESUMEN POR TORRES (MODIFICADO) ======================
 with tab2:
     st.subheader("Resumen de Saldos por Departamento")
 
@@ -614,18 +597,73 @@ with tab2:
         total_pag_gral = resumen['total_pagado'].sum()
         total_saldo_gral = resumen['saldo_a_pagar'].sum()
 
-        # Mostrar métricas con CSS para que no se trunquen
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            st.metric("💰 Deuda Inicial", f"S/ {total_deuda_inicial_gral:,.2f}")
-        with col2:
-            st.metric("📊 Total Programación", f"S/ {total_prog_gral:,.2f}")
-        with col3:
-            st.metric("💸 Total Deuda", f"S/ {total_deuda_gral:,.2f}")
-        with col4:
-            st.metric("🏦 Total Pagado", f"S/ {total_pag_gral:,.2f}")
-        with col5:
-            st.metric("⚖️ Saldo a Pagar", f"S/ {total_saldo_gral:,.2f}")
+        # 🔥 NUEVO: Presentación personalizada de los 5 totales sin truncamiento 🔥
+        st.markdown(
+            """
+            <style>
+            .metric-card {
+                background-color: #f0f2f6;
+                border-radius: 0.5rem;
+                padding: 0.75rem 0.5rem;
+                text-align: center;
+                margin: 0 0.25rem;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            }
+            .metric-label {
+                font-size: 0.9rem;
+                font-weight: 500;
+                color: #4a5b6e;
+                margin-bottom: 0.5rem;
+            }
+            .metric-value {
+                font-size: 1.25rem;
+                font-weight: 600;
+                color: #1e4663;
+                white-space: normal;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+                line-height: 1.3;
+            }
+            @media (max-width: 640px) {
+                .metric-value { font-size: 1rem; }
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        cols = st.columns(5)
+        with cols[0]:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">💰 Deuda Inicial</div>'
+                f'<div class="metric-value">S/ {total_deuda_inicial_gral:,.2f}</div></div>',
+                unsafe_allow_html=True
+            )
+        with cols[1]:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">📊 Total Programación</div>'
+                f'<div class="metric-value">S/ {total_prog_gral:,.2f}</div></div>',
+                unsafe_allow_html=True
+            )
+        with cols[2]:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">💸 Total Deuda</div>'
+                f'<div class="metric-value">S/ {total_deuda_gral:,.2f}</div></div>',
+                unsafe_allow_html=True
+            )
+        with cols[3]:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">🏦 Total Pagado</div>'
+                f'<div class="metric-value">S/ {total_pag_gral:,.2f}</div></div>',
+                unsafe_allow_html=True
+            )
+        with cols[4]:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">⚖️ Saldo a Pagar</div>'
+                f'<div class="metric-value">S/ {total_saldo_gral:,.2f}</div></div>',
+                unsafe_allow_html=True
+            )
+
         st.markdown("---")
 
         # Buscador
@@ -637,7 +675,7 @@ with tab2:
             if resumen_final.empty:
                 st.warning("No se encontraron resultados.")
 
-        # Mostrar dataframe con configuración de ancho
+        # Mostrar dataframe
         column_config = {
             "TOTAL PROGRAMACIÓN": st.column_config.TextColumn("TOTAL PROGRAMACIÓN", width="medium"),
             "TOTAL DEUDA": st.column_config.TextColumn("TOTAL DEUDA", width="medium"),
