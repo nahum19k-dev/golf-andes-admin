@@ -1,6 +1,5 @@
 import streamlit as st
 import hashlib
-from ui_common import apply_global_css
 
 st.set_page_config(
     page_title="Golf Los Andes - Login",
@@ -9,51 +8,111 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Aplicar estilos globales
-apply_global_css()
-
-# Ocultar sidebar en login
+# ── ESTILOS MODERNOS ─────────────────────────────────────────────
 st.markdown("""
 <style>
-[data-testid="stSidebar"] { display: none; }
-[data-testid="collapsedControl"] { display: none; }
-.block-container { padding-top: 2rem; }
+
+/* Fondo degradado */
+.stApp {
+    background: linear-gradient(135deg, #1e7f5c, #4dbb9e);
+}
+
+/* Ocultar sidebar */
+[data-testid="stSidebar"], [data-testid="collapsedControl"] {
+    display: none;
+}
+
+/* Centrado vertical */
+.block-container {
+    padding-top: 5vh;
+}
+
+/* Card glass */
+.login-card {
+    backdrop-filter: blur(18px);
+    background: rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 40px;
+    max-width: 420px;
+    margin: auto;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    color: white;
+}
+
+/* Título */
+.title {
+    text-align: center;
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 5px;
+}
+
+/* Subtítulo */
+.subtitle {
+    text-align: center;
+    font-size: 14px;
+    opacity: 0.8;
+    margin-bottom: 25px;
+}
+
+/* Inputs */
+input {
+    border-radius: 10px !important;
+}
+
+/* Botón */
+.stButton > button {
+    width: 100%;
+    border-radius: 12px;
+    padding: 12px;
+    background: linear-gradient(90deg, #00c896, #00a87d);
+    color: white;
+    font-weight: bold;
+    border: none;
+    transition: 0.3s;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(90deg, #00a87d, #008f68);
+}
+
+/* Checkbox texto blanco */
+label {
+    color: white !important;
+}
+
+/* Links */
+a {
+    color: #ffffff;
+    text-decoration: none;
+    font-size: 13px;
+    opacity: 0.8;
+}
+
+a:hover {
+    opacity: 1;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-# ── Cabecera principal con el nombre del complejo ───────────────────────────
+# ── CARD INICIO ─────────────────────────────────────────────
+st.markdown('<div class="login-card">', unsafe_allow_html=True)
+
+# Logo / cabecera
 st.markdown("""
-<div style="text-align: center; margin-bottom: 1.5rem;">
-    <div style="font-size: 2.5rem; font-weight: 800; color: #2C5F2D; letter-spacing: 2px;">
-        GOLF ANDES
-    </div>
-    <div style="font-size: 1.2rem; font-weight: 500; color: #D4AF37; margin-top: -5px;">
-        ADMINISTRACIÓN
-    </div>
+<div style="text-align:center; margin-bottom:20px;">
+    <div style="font-size:20px; font-weight:700;">GOLF ANDES</div>
+    <div style="font-size:12px; opacity:0.8;">ADMINISTRACIÓN</div>
 </div>
 """, unsafe_allow_html=True)
 
-# Card de login con borde dorado
-st.markdown("""
-<div style="
-    background:white;
-    border-radius:16px;
-    padding:32px 40px;
-    box-shadow:0 8px 24px rgba(0,0,0,0.12);
-    border-top:4px solid #D4AF37;
-    max-width:420px;
-    margin:0 auto;
-">
-    <h2 style="text-align:center;color:#2C5F2D;font-family:'Montserrat',sans-serif;margin-bottom:8px">
-        Iniciar Sesión
-    </h2>
-    <p style="text-align:center;color:#666;font-size:14px;margin-bottom:24px">
-        Sistema de Administración<br>Residencial Jolfandes
-    </p>
-</div>
-""", unsafe_allow_html=True)
+# Título
+st.markdown('<div class="title">Iniciar Sesión</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Sistema de Administración<br>Residencial Jolfandes</div>', unsafe_allow_html=True)
 
-# ── Usuarios y contraseñas (misma lista que antes) ─────────────────────────
+# ── LOGIN LOGIC ─────────────────────────────────────────────
 USUARIOS = {
     "admin":     hashlib.sha256("golf2026".encode()).hexdigest(),
     "nahum":     hashlib.sha256("andes2026".encode()).hexdigest(),
@@ -67,40 +126,35 @@ def verificar(usuario, password):
 
 # Formulario
 with st.form("login_form"):
-    st.markdown("<br>", unsafe_allow_html=True)
-    usuario  = st.text_input("👤  Usuario:", placeholder="Ingrese su usuario")
-    password = st.text_input("🔒  Contraseña:", type="password", placeholder="Ingrese su contraseña")
-    
-    # Opciones adicionales
+    usuario  = st.text_input("Usuario", placeholder="Ingrese su usuario")
+    password = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña")
+
     col1, col2 = st.columns(2)
     with col1:
         recordar = st.checkbox("Recordar usuario")
     with col2:
-        st.markdown("""
-        <div style="text-align: right;">
-            <a href="#" style="color:#2C5F2D; text-decoration: none;">Olvidé mi contraseña</a>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        st.markdown('<div style="text-align:right;"><a href="#">Olvidé mi contraseña</a></div>', unsafe_allow_html=True)
+
     st.markdown("<br>", unsafe_allow_html=True)
-    submit = st.form_submit_button("🔐  INGRESAR", use_container_width=True)
+    submit = st.form_submit_button("INGRESAR")
 
     if submit:
         if not usuario or not password:
-            st.error("⚠️ Ingrese usuario y contraseña")
+            st.error("Ingrese usuario y contraseña")
         elif verificar(usuario.strip().lower(), password):
             st.session_state["autenticado"] = True
-            st.session_state["usuario"]     = usuario.strip().lower()
-            # Si se marcó "Recordar usuario", podríamos guardarlo en cookies, pero por simplicidad solo mostramos mensaje
-            if recordar:
-                st.info("La opción 'Recordar usuario' estará disponible próximamente.")
-            st.success("✅ Acceso correcto!")
+            st.session_state["usuario"] = usuario.strip().lower()
+            st.success("Acceso correcto")
             st.switch_page("pages/1_Buscar.py")
         else:
-            st.error("❌ Usuario o contraseña incorrectos")
+            st.error("Usuario o contraseña incorrectos")
 
+# Cerrar card
+st.markdown("</div>", unsafe_allow_html=True)
+
+# Footer
 st.markdown("""
-<p style="text-align:center;color:#aaa;font-size:12px;margin-top:20px">
+<p style="text-align:center;color:white;font-size:12px;margin-top:20px;opacity:0.7">
     Residencial Golf Los Andes © 2026
 </p>
 """, unsafe_allow_html=True)
