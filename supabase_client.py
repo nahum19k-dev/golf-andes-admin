@@ -504,3 +504,45 @@ def obtener_siguiente_codigo() -> int:
     else:
         supabase.table('control_codigos').insert({'ultimo_codigo': 1}).execute()
         return 1
+# ====================== REPORTES MENSUALES ======================
+def guardar_reporte_mensual(anio: int, mes: str, df: pd.DataFrame) -> None:
+    """
+    Guarda el DataFrame completo de movimientos en la tabla reportes_mensuales.
+    """
+    supabase = get_supabase()
+    # Convertir el DataFrame a JSON (orient='records')
+    datos_json = df.to_json(orient='records', date_format='iso')
+    # Insertar o actualizar (usar upsert basado en la restricción UNIQUE)
+    supabase.table('reportes_mensuales').upsert(
+        {'anio': anio, 'mes': mes, 'datos_json': datos_json},
+        on_conflict='anio, mes'
+    ).execute()
+
+def leer_reporte_mensual(anio: int, mes: str) -> pd.DataFrame:
+    """
+    Carga el DataFrame completo de movimientos para un mes.
+    Retorna DataFrame vacío si no existe.
+    """
+    supabase = get_supabase()
+    response = supabase.table('reportes_mensuales')\
+        .select('datos_json')\
+        .eq('anio', anio)\
+        .eq('mes', mes)\
+        .execute()
+    if response.data:
+        df = pd.read_json(response.data[0]['datos_json'], orient='records')
+        # Convertir columnas numéricas a float si es necesario
+        for col in df.columns:
+            if col not in ['fecha', 'n_operacion']:
+                df[col] = pd.to_numeric(df[col], errors='ignore')
+        return df
+    return pd.DataFrame()
+
+def existe_reporte_mensual(anio: int, mes: str) -> bool:
+    supabase = get_supabase()
+    response = supabase.table('reportes_mensuales')\
+        .select('id')\
+        .eq('anio', anio)\
+        .eq('mes', mes)\
+        .execute()
+    return len(response.data) > 0
