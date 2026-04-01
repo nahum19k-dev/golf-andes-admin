@@ -41,6 +41,11 @@ def limpiar_numero_general(x):
     except:
         return 0.0
 
+# ========== CACHÉ PARA PROPIETARIOS ==========
+@st.cache_data(ttl=300)  # 5 minutos de caché
+def cargar_propietarios():
+    return gsheets.leer_propietarios()
+
 # ========== CREAR PESTAÑAS ==========
 tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
 
@@ -58,8 +63,8 @@ with tab1:
     if st.button("Generar Estado de Cuenta", type="primary"):
         with st.spinner("Cargando datos..."):
             try:
-                # ========== PROPIETARIOS ==========
-                prop = gsheets.leer_propietarios()
+                # ========== PROPIETARIOS (con caché) ==========
+                prop = cargar_propietarios()
                 if prop.empty:
                     st.error("No se pudo cargar la lista de propietarios.")
                     st.stop()
@@ -113,6 +118,7 @@ with tab1:
                                  f"Por favor, genera primero el reporte del mes anterior.")
                         st.stop()
                     else:
+                        # Obtener último saldo por departamento (más rápido)
                         df_reporte_anterior['saldo_clean'] = df_reporte_anterior['saldo'].apply(limpiar_numero_general)
                         ultimo_saldo = df_reporte_anterior.groupby(['torre', 'departamento'])['saldo_clean'].last().reset_index()
                         deuda_df = ultimo_saldo.rename(columns={'saldo_clean': 'deuda_inicial'})
@@ -154,14 +160,14 @@ with tab1:
                     otros_df = otros_df[['torre', 'departamento', 'otros']].copy()
                     otros_df['otros'] = otros_df['otros'].fillna(0)
 
-                # ========== PAGOS ==========
+                # ========== PAGOS (optimizado) ==========
                 pagos_df = gsheets.leer_pagos_mes(mes, anio)
                 if pagos_df.empty:
                     st.warning(f"No se encontraron pagos para {mes} {anio}.")
                     pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                                      'mantenimiento', 'amortizacion', 'medidor'])
                 else:
-                    # Asegurar que todas las columnas numéricas existan
+                    # Asegurar columnas numéricas
                     for col in ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
                         if col not in pagos_df.columns:
                             pagos_df[col] = 0
@@ -176,7 +182,15 @@ with tab1:
                 base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(otros_df, on=['torre', 'departamento'], how='left').fillna(0)
 
-                # ========== CONSTRUIR MOVIMIENTOS ==========
+                # ========== OPTIMIZACIÓN: DICCIONARIO DE PAGOS POR DEPARTAMENTO ==========
+                pagos_por_departamento = {}
+                for _, pago in pagos_df.iterrows():
+                    key = (pago['torre'], pago['departamento'])
+                    if key not in pagos_por_departamento:
+                        pagos_por_departamento[key] = []
+                    pagos_por_departamento[key].append(pago)
+
+                # ========== CONSTRUIR MOVIMIENTOS (mucho más rápido) ==========
                 movimientos = []
                 for _, row in base.iterrows():
                     torre = row['torre']
@@ -191,9 +205,13 @@ with tab1:
                     otros = row['otros']
                     total_cargos = deuda + mantenimiento + amort + med + otros
 
-                    pagos_dpto = pagos_df[(pagos_df['torre'] == torre) & (pagos_df['departamento'] == dpto)].copy()
-                    pagos_dpto = pagos_dpto.sort_values('fecha')
+                    # Obtener pagos de este departamento (si existen)
+                    pagos_dpto = pagos_por_departamento.get((torre, dpto), [])
+                    # Ya están ordenados por fecha (porque pagos_df se ordenó antes)
+                    # Pero si no están ordenados, podemos ordenarlos aquí
+                    pagos_dpto.sort(key=lambda x: x['fecha'] if pd.notna(x['fecha']) else datetime.min)
 
+                    # Movimiento de cargo
                     movimientos.append({
                         'fecha': f"01/{mes[:3]}/{anio}",
                         'torre': torre,
@@ -217,7 +235,7 @@ with tab1:
                     })
 
                     saldo = total_cargos
-                    for _, pago in pagos_dpto.iterrows():
+                    for pago in pagos_dpto:
                         saldo -= pago['ingresos']
                         movimientos.append({
                             'fecha': pago['fecha'].strftime('%d/%m/%Y') if pd.notna(pago['fecha']) else '',
@@ -319,7 +337,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '                <tr>\n'
+                    html += '                 <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -328,21 +346,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '                </tr>\n'
+                    html += '                 </tr>\n'
 
-                html += '                <tr>\n'
+                html += '                 <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '                </tr>\n'
+                html += '                 </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '                <tr>\n'
+                    html += '                 <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '                </tr>\n'
+                    html += '                 </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
