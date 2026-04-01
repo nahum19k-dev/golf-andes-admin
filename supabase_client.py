@@ -12,10 +12,7 @@ def get_supabase() -> Client:
 
 # ====================== FUNCIÓN AUXILIAR ======================
 def limpiar_nan_para_json(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Reemplaza NaN por None (que se convierte a null en JSON) en DataFrames.
-    También convierte valores numéricos infinitos a 0.
-    """
+    """Reemplaza NaN por None (que se convierte a null en JSON) en DataFrames."""
     df = df.copy()
     for col in df.columns:
         if df[col].dtype == 'float64':
@@ -25,9 +22,7 @@ def limpiar_nan_para_json(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def limpiar_nombres_columnas(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Solo limpia espacios al inicio/final, sin cambiar mayúsculas.
-    """
+    """Solo limpia espacios al inicio/final, sin cambiar mayúsculas."""
     df.columns = df.columns.str.strip()
     return df
 
@@ -75,17 +70,15 @@ def eliminar_propietario_por_id(record_id: int) -> bool:
         return False
 
 # ====================== PROGRAMACIÓN ======================
-def existe_programacion(periodo_key: str) -> bool:
+def guardar_programacion(df: pd.DataFrame, mes: str, anio: int, fecha_emision, fecha_vencimiento) -> str:
+    """Guarda una nueva hoja de programación, validando solapamiento de fechas."""
     supabase = get_supabase()
-    nombre_hoja = f"Prog_{periodo_key.upper()}"
-    response = supabase.table('programacion').select('id').eq('nombre_hoja', nombre_hoja).execute()
-    return len(response.data) > 0
+    nombre_hoja = f"Prog_{mes.upper()}_{anio}"
 
-def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, anio: int) -> str:
-    nombre_hoja = f"Prog_{periodo_key.upper()}"
-    if existe_programacion(periodo_key):
-        raise ValueError(f"La hoja '{nombre_hoja}' ya existe.")
-    supabase = get_supabase()
+    # Validar solapamiento con otras programaciones del mismo tipo
+    if existe_solapamiento_fechas("Mantenimiento", fecha_emision, fecha_vencimiento):
+        raise ValueError(f"Las fechas {fecha_emision} - {fecha_vencimiento} se solapan con otra programación existente.")
+
     df_clean = limpiar_nan_para_json(df)
     datos = df_clean.to_dict(orient='records')
     supabase.table('programacion').insert({
@@ -94,40 +87,43 @@ def crear_y_guardar_programacion(df: pd.DataFrame, periodo_key: str, mes: str, a
         'anio': anio,
         'datos': datos
     }).execute()
+
+    # Registrar las fechas para control de solapamiento
+    registrar_fecha_programacion("Mantenimiento", nombre_hoja, fecha_emision, fecha_vencimiento)
     return nombre_hoja
 
-def listar_hojas_programacion():
+def leer_programacion(mes: str, anio: int) -> pd.DataFrame:
+    """
+    Lee todas las programaciones del mes y año, concatena los datos y agrupa por departamento sumando Mantenimiento.
+    """
     supabase = get_supabase()
-    response = supabase.table('programacion').select('nombre_hoja').execute()
-    nombres = [row['nombre_hoja'] for row in response.data]
-    nombres.sort(reverse=True)
-    return nombres
+    response = supabase.table('programacion').select('datos').eq('mes', mes).eq('anio', anio).execute()
+    if not response.data:
+        return pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
 
-def leer_hoja_programacion(nombre_hoja):
-    supabase = get_supabase()
-    response = supabase.table('programacion').select('datos').eq('nombre_hoja', nombre_hoja).execute()
-    if response.data:
-        df = pd.DataFrame(response.data[0]['datos'])
+    dfs = []
+    for row in response.data:
+        df = pd.DataFrame(row['datos'])
         df = limpiar_nombres_columnas(df)
-        return df
-    return pd.DataFrame()
+        if 'torre' in df.columns and 'departamento' in df.columns and 'Mantenimiento' in df.columns:
+            df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+            df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+            df['Mantenimiento'] = pd.to_numeric(df['Mantenimiento'], errors='coerce').fillna(0)
+            dfs.append(df)
+
+    if not dfs:
+        return pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
+
+    df_all = pd.concat(dfs, ignore_index=True)
+    df_all = df_all.dropna(subset=['torre', 'departamento'])
+    df_sum = df_all.groupby(['torre', 'departamento'], as_index=False)['Mantenimiento'].sum()
+    return df_sum[['torre', 'departamento', 'Mantenimiento']]
 
 # ====================== PAGOS ======================
 def guardar_pagos(df: pd.DataFrame, mes: str, anio: int) -> str:
+    """Guarda una hoja de pagos (no se validan fechas para pagos)."""
     supabase = get_supabase()
-    nombre_base = f"Pagos {mes} {anio}"
-    resp = supabase.table('pagos').select('nombre_hoja').eq('nombre_hoja', nombre_base).execute()
-    if resp.data:
-        contador = 2
-        while True:
-            nuevo_nombre = f"{nombre_base} ({contador})"
-            resp2 = supabase.table('pagos').select('nombre_hoja').eq('nombre_hoja', nuevo_nombre).execute()
-            if not resp2.data:
-                nombre_hoja = nuevo_nombre
-                break
-            contador += 1
-    else:
-        nombre_hoja = nombre_base
+    nombre_hoja = f"Pagos {mes} {anio}"
 
     # Calcular la columna ingresos si no existe
     if 'ingresos' not in df.columns:
@@ -148,63 +144,48 @@ def guardar_pagos(df: pd.DataFrame, mes: str, anio: int) -> str:
     }).execute()
     return nombre_hoja
 
-def listar_hojas_pagos():
-    supabase = get_supabase()
-    response = supabase.table('pagos').select('nombre_hoja').execute()
-    nombres = [row['nombre_hoja'] for row in response.data]
-    nombres.sort(reverse=True)
-    return nombres
-
-def leer_hoja_pagos(nombre_hoja):
-    supabase = get_supabase()
-    response = supabase.table('pagos').select('datos').eq('nombre_hoja', nombre_hoja).execute()
-    if response.data:
-        df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_nombres_columnas(df)
-        return df
-    return pd.DataFrame()
-
-def leer_pagos_mes(mes: str, anio: int):
+def leer_pagos_mes(mes: str, anio: int) -> pd.DataFrame:
+    """
+    Lee todas las hojas de pagos del mes y año, concatena los datos y los devuelve sin agrupar.
+    """
     supabase = get_supabase()
     response = supabase.table('pagos').select('datos').eq('mes', mes).eq('anio', anio).execute()
-    if response.data:
-        df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_nombres_columnas(df)
+    if not response.data:
+        return pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
+                                     'mantenimiento', 'amortizacion', 'medidor'])
 
+    dfs = []
+    for row in response.data:
+        df = pd.DataFrame(row['datos'])
+        df = limpiar_nombres_columnas(df)
+        # Asegurar columnas numéricas
         conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
                      'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
-
         for col in conceptos + ['torre', 'departamento', 'ingresos']:
             if col not in df.columns:
                 df[col] = 0
             else:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
         if 'ingresos' not in df.columns or df['ingresos'].sum() == 0:
             df['ingresos'] = df[conceptos].sum(axis=1)
-
         if 'fecha' in df.columns:
             df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+        dfs.append(df)
 
-        return df.sort_values('fecha')
-    return pd.DataFrame()
+    if not dfs:
+        return pd.DataFrame()
+
+    df_all = pd.concat(dfs, ignore_index=True)
+    return df_all.sort_values('fecha')
 
 # ====================== MEDIDORES ======================
-def guardar_medidor(df: pd.DataFrame, mes: str, anio: int) -> str:
+def guardar_medidor(df: pd.DataFrame, mes: str, anio: int, fecha_emision, fecha_vencimiento) -> str:
+    """Guarda una hoja de medidores con validación de solapamiento."""
     supabase = get_supabase()
-    nombre_base = f"Medidor {mes} {anio}"
-    resp = supabase.table('medidores').select('nombre_hoja').eq('nombre_hoja', nombre_base).execute()
-    if resp.data:
-        contador = 2
-        while True:
-            nuevo_nombre = f"{nombre_base} ({contador})"
-            resp2 = supabase.table('medidores').select('nombre_hoja').eq('nombre_hoja', nuevo_nombre).execute()
-            if not resp2.data:
-                nombre_hoja = nuevo_nombre
-                break
-            contador += 1
-    else:
-        nombre_hoja = nombre_base
+    nombre_hoja = f"Medidor {mes} {anio}"
+
+    if existe_solapamiento_fechas("Medidores", fecha_emision, fecha_vencimiento):
+        raise ValueError(f"Las fechas {fecha_emision} - {fecha_vencimiento} se solapan con otra hoja de medidores existente.")
 
     df_clean = limpiar_nan_para_json(df)
     datos = df_clean.to_dict(orient='records')
@@ -214,40 +195,45 @@ def guardar_medidor(df: pd.DataFrame, mes: str, anio: int) -> str:
         'anio': anio,
         'datos': datos
     }).execute()
+
+    registrar_fecha_programacion("Medidores", nombre_hoja, fecha_emision, fecha_vencimiento)
     return nombre_hoja
 
-def listar_hojas_medidor():
+def leer_medidores(mes: str, anio: int) -> pd.DataFrame:
+    """
+    Lee todas las hojas de medidores del mes y año, concatena y agrupa por departamento sumando monto.
+    """
     supabase = get_supabase()
-    response = supabase.table('medidores').select('nombre_hoja').execute()
-    nombres = [row['nombre_hoja'] for row in response.data]
-    nombres.sort(reverse=True)
-    return nombres
+    response = supabase.table('medidores').select('datos').eq('mes', mes).eq('anio', anio).execute()
+    if not response.data:
+        return pd.DataFrame(columns=['torre', 'departamento', 'monto'])
 
-def leer_hoja_medidor(nombre_hoja):
-    supabase = get_supabase()
-    response = supabase.table('medidores').select('datos').eq('nombre_hoja', nombre_hoja).execute()
-    if response.data:
-        df = pd.DataFrame(response.data[0]['datos'])
+    dfs = []
+    for row in response.data:
+        df = pd.DataFrame(row['datos'])
         df = limpiar_nombres_columnas(df)
-        return df
-    return pd.DataFrame()
+        if 'torre' in df.columns and 'departamento' in df.columns and 'monto' in df.columns:
+            df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+            df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+            df['monto'] = pd.to_numeric(df['monto'], errors='coerce').fillna(0)
+            dfs.append(df)
+
+    if not dfs:
+        return pd.DataFrame(columns=['torre', 'departamento', 'monto'])
+
+    df_all = pd.concat(dfs, ignore_index=True)
+    df_all = df_all.dropna(subset=['torre', 'departamento'])
+    df_sum = df_all.groupby(['torre', 'departamento'], as_index=False)['monto'].sum()
+    return df_sum[['torre', 'departamento', 'monto']]
 
 # ====================== AMORTIZACIÓN ======================
-def guardar_amortizacion(df: pd.DataFrame, mes: str, anio: int) -> str:
+def guardar_amortizacion(df: pd.DataFrame, mes: str, anio: int, fecha_emision, fecha_vencimiento) -> str:
+    """Guarda una hoja de amortización con validación de solapamiento."""
     supabase = get_supabase()
-    nombre_base = f"Amortización {mes} {anio}"
-    resp = supabase.table('amortizacion').select('nombre_hoja').eq('nombre_hoja', nombre_base).execute()
-    if resp.data:
-        contador = 2
-        while True:
-            nuevo_nombre = f"{nombre_base} ({contador})"
-            resp2 = supabase.table('amortizacion').select('nombre_hoja').eq('nombre_hoja', nuevo_nombre).execute()
-            if not resp2.data:
-                nombre_hoja = nuevo_nombre
-                break
-            contador += 1
-    else:
-        nombre_hoja = nombre_base
+    nombre_hoja = f"Amortización {mes} {anio}"
+
+    if existe_solapamiento_fechas("Amortización", fecha_emision, fecha_vencimiento):
+        raise ValueError(f"Las fechas {fecha_emision} - {fecha_vencimiento} se solapan con otra hoja de amortización existente.")
 
     df_clean = limpiar_nan_para_json(df)
     datos = df_clean.to_dict(orient='records')
@@ -257,40 +243,45 @@ def guardar_amortizacion(df: pd.DataFrame, mes: str, anio: int) -> str:
         'anio': anio,
         'datos': datos
     }).execute()
+
+    registrar_fecha_programacion("Amortización", nombre_hoja, fecha_emision, fecha_vencimiento)
     return nombre_hoja
 
-def listar_hojas_amortizacion():
+def leer_amortizacion(mes: str, anio: int) -> pd.DataFrame:
+    """
+    Lee todas las hojas de amortización del mes y año, concatena y agrupa por departamento sumando amortizacion.
+    """
     supabase = get_supabase()
-    response = supabase.table('amortizacion').select('nombre_hoja').execute()
-    nombres = [row['nombre_hoja'] for row in response.data]
-    nombres.sort(reverse=True)
-    return nombres
+    response = supabase.table('amortizacion').select('datos').eq('mes', mes).eq('anio', anio).execute()
+    if not response.data:
+        return pd.DataFrame(columns=['torre', 'departamento', 'amortizacion'])
 
-def leer_hoja_amortizacion(nombre_hoja):
-    supabase = get_supabase()
-    response = supabase.table('amortizacion').select('datos').eq('nombre_hoja', nombre_hoja).execute()
-    if response.data:
-        df = pd.DataFrame(response.data[0]['datos'])
+    dfs = []
+    for row in response.data:
+        df = pd.DataFrame(row['datos'])
         df = limpiar_nombres_columnas(df)
-        return df
-    return pd.DataFrame()
+        if 'torre' in df.columns and 'departamento' in df.columns and 'amortizacion' in df.columns:
+            df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+            df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+            df['amortizacion'] = pd.to_numeric(df['amortizacion'], errors='coerce').fillna(0)
+            dfs.append(df)
+
+    if not dfs:
+        return pd.DataFrame(columns=['torre', 'departamento', 'amortizacion'])
+
+    df_all = pd.concat(dfs, ignore_index=True)
+    df_all = df_all.dropna(subset=['torre', 'departamento'])
+    df_sum = df_all.groupby(['torre', 'departamento'], as_index=False)['amortizacion'].sum()
+    return df_sum[['torre', 'departamento', 'amortizacion']]
 
 # ====================== OTROS ======================
-def guardar_otros(df: pd.DataFrame, mes: str, anio: int) -> str:
+def guardar_otros(df: pd.DataFrame, mes: str, anio: int, fecha_emision, fecha_vencimiento) -> str:
+    """Guarda una hoja de otros conceptos con validación de solapamiento."""
     supabase = get_supabase()
-    nombre_base = f"Otros {mes} {anio}"
-    resp = supabase.table('otros').select('nombre_hoja').eq('nombre_hoja', nombre_base).execute()
-    if resp.data:
-        contador = 2
-        while True:
-            nuevo_nombre = f"{nombre_base} ({contador})"
-            resp2 = supabase.table('otros').select('nombre_hoja').eq('nombre_hoja', nuevo_nombre).execute()
-            if not resp2.data:
-                nombre_hoja = nuevo_nombre
-                break
-            contador += 1
-    else:
-        nombre_hoja = nombre_base
+    nombre_hoja = f"Otros {mes} {anio}"
+
+    if existe_solapamiento_fechas("Otros", fecha_emision, fecha_vencimiento):
+        raise ValueError(f"Las fechas {fecha_emision} - {fecha_vencimiento} se solapan con otra hoja de otros conceptos existente.")
 
     df_clean = limpiar_nan_para_json(df)
     datos = df_clean.to_dict(orient='records')
@@ -300,23 +291,44 @@ def guardar_otros(df: pd.DataFrame, mes: str, anio: int) -> str:
         'anio': anio,
         'datos': datos
     }).execute()
+
+    registrar_fecha_programacion("Otros", nombre_hoja, fecha_emision, fecha_vencimiento)
     return nombre_hoja
 
-def listar_hojas_otros():
+def leer_otros_mes(mes: str, anio: int) -> pd.DataFrame:
+    """
+    Lee todas las hojas de otros conceptos del mes y año, concatena y agrupa por departamento sumando otros.
+    """
     supabase = get_supabase()
-    response = supabase.table('otros').select('nombre_hoja').execute()
-    nombres = [row['nombre_hoja'] for row in response.data]
-    nombres.sort(reverse=True)
-    return nombres
+    response = supabase.table('otros').select('datos').eq('mes', mes).eq('anio', anio).execute()
+    if not response.data:
+        return pd.DataFrame(columns=['torre', 'departamento', 'otros'])
 
-def leer_hoja_otros(nombre_hoja):
-    supabase = get_supabase()
-    response = supabase.table('otros').select('datos').eq('nombre_hoja', nombre_hoja).execute()
-    if response.data:
-        df = pd.DataFrame(response.data[0]['datos'])
+    dfs = []
+    for row in response.data:
+        df = pd.DataFrame(row['datos'])
         df = limpiar_nombres_columnas(df)
-        return df
-    return pd.DataFrame()
+        df.columns = df.columns.str.strip().str.lower()
+        conceptos = ['cuota_extraordinarias', 'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
+        for c in conceptos:
+            if c not in df.columns:
+                df[c] = 0
+        for c in conceptos:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+        df['otros'] = df[conceptos].sum(axis=1)
+
+        if 'torre' in df.columns and 'departamento' in df.columns:
+            df['torre'] = pd.to_numeric(df['torre'], errors='coerce')
+            df['departamento'] = pd.to_numeric(df['departamento'], errors='coerce')
+            dfs.append(df[['torre', 'departamento', 'otros']].copy())
+
+    if not dfs:
+        return pd.DataFrame(columns=['torre', 'departamento', 'otros'])
+
+    df_all = pd.concat(dfs, ignore_index=True)
+    df_all = df_all.dropna(subset=['torre', 'departamento'])
+    df_sum = df_all.groupby(['torre', 'departamento'], as_index=False)['otros'].sum()
+    return df_sum[['torre', 'departamento', 'otros']]
 
 # ====================== DEUDA INICIAL ======================
 def guardar_deuda_inicial(df: pd.DataFrame, anio: int) -> str:
@@ -330,24 +342,22 @@ def guardar_deuda_inicial(df: pd.DataFrame, anio: int) -> str:
     }).execute()
     return f"Deuda Inicial {anio}"
 
-def listar_hojas_deuda():
-    supabase = get_supabase()
-    response = supabase.table('deuda_inicial').select('anio').execute()
-    nombres = [f"Deuda Inicial {row['anio']}" for row in response.data]
-    nombres.sort(reverse=True)
-    return nombres
-
-def leer_hoja_deuda(nombre_hoja):
-    try:
-        anio = int(nombre_hoja.split()[-1])
-    except:
-        return pd.DataFrame()
+def leer_deuda_inicial(anio: int):
+    nombre_hoja = f"Deuda Inicial {anio}"
     supabase = get_supabase()
     response = supabase.table('deuda_inicial').select('datos').eq('anio', anio).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
         df = limpiar_nombres_columnas(df)
         return df
+    # Fallback al año anterior
+    if anio > 2020:
+        response_ant = supabase.table('deuda_inicial').select('datos').eq('anio', anio-1).execute()
+        if response_ant.data:
+            st.info(f"Usando deuda del año anterior ({anio-1}) porque no se encontró para {anio}.")
+            df = pd.DataFrame(response_ant.data[0]['datos'])
+            df = limpiar_nombres_columnas(df)
+            return df
     return pd.DataFrame()
 
 # ====================== CONTROL DE FECHAS ======================
@@ -372,6 +382,8 @@ def existe_solapamiento_fechas(tipo: str, nueva_emision, nueva_vencimiento) -> b
     return False
 
 def obtener_fechas_programacion(tipo: str, mes: str, anio: int):
+    # Como ahora puede haber múltiples hojas, se devuelve el rango más amplio? 
+    # Por simplicidad, seguimos devolviendo el de la primera que encontremos.
     if tipo == "Mantenimiento":
         nombre_hoja = f"Prog_{mes.upper()}_{anio}"
     elif tipo == "Medidores":
@@ -404,83 +416,8 @@ def eliminar_programacion(nombre_hoja: str) -> bool:
     supabase.table('control_fechas').delete().eq('nombre_hoja', nombre_hoja).execute()
     return eliminada
 
-# ====================== LECTURAS ESPECÍFICAS PARA OPERACIONES (AGRUPADAS) ======================
-def leer_programacion(mes: str, anio: int):
-    nombre_hoja = f"Prog_{mes.upper()}_{anio}"
-    df = leer_hoja_programacion(nombre_hoja)
-    if df.empty:
-        return df
-    # Asegurar columnas numéricas
-    for col in ['torre', 'departamento', 'Mantenimiento']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    df = df.dropna(subset=['torre', 'departamento'])
-    # Agrupar por torre y departamento y sumar Mantenimiento
-    df_agrupado = df.groupby(['torre', 'departamento'], as_index=False)['Mantenimiento'].sum()
-    return df_agrupado
-
-def leer_amortizacion(mes: str, anio: int):
-    nombre_hoja = f"Amortización {mes} {anio}"
-    df = leer_hoja_amortizacion(nombre_hoja)
-    if df.empty:
-        return df
-    for col in ['torre', 'departamento', 'amortizacion']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    df = df.dropna(subset=['torre', 'departamento'])
-    df_agrupado = df.groupby(['torre', 'departamento'], as_index=False)['amortizacion'].sum()
-    return df_agrupado
-
-def leer_medidores(mes: str, anio: int):
-    nombre_hoja = f"Medidor {mes} {anio}"
-    df = leer_hoja_medidor(nombre_hoja)
-    if df.empty:
-        return df
-    for col in ['torre', 'departamento', 'monto']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    df = df.dropna(subset=['torre', 'departamento'])
-    df_agrupado = df.groupby(['torre', 'departamento'], as_index=False)['monto'].sum()
-    return df_agrupado
-
-def leer_otros_mes(mes: str, anio: int):
-    nombre_hoja = f"Otros {mes} {anio}"
-    df_otros = leer_hoja_otros(nombre_hoja)
-    if df_otros.empty:
-        return pd.DataFrame(columns=['torre', 'departamento', 'otros'])
-
-    df_otros.columns = df_otros.columns.str.strip().str.lower()
-    conceptos = ['cuota_extraordinarias', 'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
-    for c in conceptos:
-        if c not in df_otros.columns:
-            df_otros[c] = 0
-    for c in conceptos:
-        df_otros[c] = pd.to_numeric(df_otros[c], errors='coerce').fillna(0)
-    df_otros['otros'] = df_otros[conceptos].sum(axis=1)
-
-    df_otros['torre'] = pd.to_numeric(df_otros['torre'], errors='coerce')
-    df_otros['departamento'] = pd.to_numeric(df_otros['departamento'], errors='coerce')
-    df_otros = df_otros.dropna(subset=['torre', 'departamento'])
-    # Agrupar por si hay múltiples filas para el mismo departamento
-    df_agrupado = df_otros.groupby(['torre', 'departamento'], as_index=False)['otros'].sum()
-    return df_agrupado[['torre', 'departamento', 'otros']].copy()
-
-def leer_deuda_inicial(anio: int):
-    nombre_hoja = f"Deuda Inicial {anio}"
-    df = leer_hoja_deuda(nombre_hoja)
-    if df.empty and anio > 2020:
-        df_ant = leer_hoja_deuda(f"Deuda Inicial {anio-1}")
-        if not df_ant.empty:
-            st.info(f"Usando deuda del año anterior ({anio-1}) porque no se encontró para {anio}.")
-            return df_ant
-    return df
-
 # ====================== REPORTES MENSUALES ======================
 def guardar_reporte_mensual(anio: int, mes: str, df: pd.DataFrame) -> None:
-    """
-    Guarda el DataFrame completo de movimientos en la tabla reportes_mensuales.
-    Si ya existe, lo sobrescribe (upsert).
-    """
     supabase = get_supabase()
     datos_json = df.to_json(orient='records', date_format='iso')
     supabase.table('reportes_mensuales').upsert(
@@ -489,10 +426,6 @@ def guardar_reporte_mensual(anio: int, mes: str, df: pd.DataFrame) -> None:
     ).execute()
 
 def leer_reporte_mensual(anio: int, mes: str) -> pd.DataFrame:
-    """
-    Carga el DataFrame completo de movimientos para un mes.
-    Retorna DataFrame vacío si no existe.
-    """
     supabase = get_supabase()
     response = supabase.table('reportes_mensuales')\
         .select('datos_json')\
@@ -501,7 +434,6 @@ def leer_reporte_mensual(anio: int, mes: str) -> pd.DataFrame:
         .execute()
     if response.data:
         df = pd.read_json(response.data[0]['datos_json'], orient='records')
-        # Asegurar tipos numéricos para columnas que no son fecha/operación
         for col in df.columns:
             if col not in ['fecha', 'n_operacion']:
                 df[col] = pd.to_numeric(df[col], errors='ignore')
