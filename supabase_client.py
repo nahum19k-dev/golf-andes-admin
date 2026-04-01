@@ -452,6 +452,37 @@ def leer_deuda_inicial(anio: int):
             return df_ant
     return df
 
+# ====================== NUEVAS FUNCIONES: SALDOS MENSUALES ======================
+def guardar_saldos_mensuales(df: pd.DataFrame):
+    """
+    Guarda los saldos finales de un mes en la tabla saldos_mensuales.
+    df debe tener las columnas: anio, mes, torre, departamento, saldo_final.
+    """
+    supabase = get_supabase()
+    df_clean = limpiar_nan_para_json(df)
+    datos = df_clean.to_dict(orient='records')
+    # Upsert basado en la restricción UNIQUE (anio, mes, torre, departamento)
+    supabase.table('saldos_mensuales').upsert(
+        datos,
+        on_conflict='anio, mes, torre, departamento'
+    ).execute()
+
+def leer_saldos_mensuales(anio: int, mes: str) -> pd.DataFrame:
+    """
+    Devuelve un DataFrame con torre, departamento, saldo_final para el mes y año dados.
+    """
+    supabase = get_supabase()
+    response = supabase.table('saldos_mensuales')\
+        .select('torre, departamento, saldo_final')\
+        .eq('anio', anio)\
+        .eq('mes', mes)\
+        .execute()
+    if response.data:
+        df = pd.DataFrame(response.data)
+        return df
+    else:
+        return pd.DataFrame(columns=['torre', 'departamento', 'saldo_final'])
+
 # ====================== CONTROL DE CÓDIGOS ======================
 def obtener_ultimo_codigo() -> int:
     supabase = get_supabase()
