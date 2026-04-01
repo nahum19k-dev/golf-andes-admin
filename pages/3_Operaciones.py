@@ -52,6 +52,7 @@ def leer_otros_mes(mes: str, anio: int):
     return df_otros[['torre', 'departamento', 'otros']].copy()
 
 def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
+    """Función de respaldo: calcula el saldo del mes anterior desde las hojas."""
     mes_ant, anio_ant = obtener_mes_anterior(mes, anio)
 
     deuda_ant = gsheets.leer_deuda_inicial(anio_ant)
@@ -186,6 +187,7 @@ with tab1:
                 # ========== DEUDA INICIAL DEL MES ==========
                 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
                 if mes == "Enero":
+                    # Enero: leer deuda almacenada (como antes)
                     deuda_almacenada = gsheets.leer_deuda_inicial(anio)
                     if deuda_almacenada.empty:
                         st.warning(f"No se encontró 'Deuda Inicial {anio}'. Se usará 0 como deuda inicial.")
@@ -207,8 +209,15 @@ with tab1:
                             st.warning("No se identificaron columnas de deuda. Se usará 0.")
                             deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
                 else:
-                    deuda_df = calcular_balance_mes_anterior(mes, anio, base)
-                    st.info(f"Deuda inicial del mes calculada a partir del saldo del mes anterior ({mes} {anio}).")
+                    # Meses siguientes: leer saldo del mes anterior desde la tabla saldos_mensuales
+                    mes_anterior, anio_anterior = obtener_mes_anterior(mes, anio)
+                    deuda_df = gsheets.leer_saldos_mensuales(anio_anterior, mes_anterior)
+                    if deuda_df.empty:
+                        st.warning(f"No se encontró saldo guardado para {mes_anterior} {anio_anterior}. Se recalculará desde las hojas.")
+                        deuda_df = calcular_balance_mes_anterior(mes, anio, base)
+                    else:
+                        deuda_df = deuda_df.rename(columns={'saldo_final': 'deuda_inicial'})
+                    st.info(f"Deuda inicial del mes obtenida del saldo guardado de {mes_anterior} {anio_anterior}.")
 
                 # ========== PROGRAMACIÓN ==========
                 prog_df = gsheets.leer_programacion(mes, anio)
@@ -384,6 +393,16 @@ with tab1:
                 df_final = df_final.reset_index(drop=True)
                 df_final.insert(0, '#', range(1, len(df_final)+1))
 
+                # ========== GUARDAR SALDO FINAL EN TABLA SALDOS_MENSUALES ==========
+                # (NUEVO) Extraer el último saldo por departamento y guardarlo
+                ultimo_saldo = df_final.groupby(['torre', 'departamento'])['saldo'].last().reset_index()
+                ultimo_saldo['anio'] = anio
+                ultimo_saldo['mes'] = mes
+                try:
+                    gsheets.guardar_saldos_mensuales(ultimo_saldo)
+                except Exception as e:
+                    st.warning(f"No se pudo guardar el saldo final en la base de datos: {e}")
+
                 st.session_state.df_final = df_final.copy()
                 st.session_state.datos_cargados = True
                 st.session_state.mes_actual = mes
@@ -428,7 +447,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '         <tr>\n'
+                    html += '          <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -437,21 +456,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '         </tr>\n'
+                    html += '          </tr>\n'
 
-                html += '         <tr>\n'
+                html += '          <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '         </tr>\n'
+                html += '          </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '         <tr>\n'
+                    html += '          <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '         </tr>\n'
+                    html += '          </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -478,7 +497,7 @@ with tab1:
         else:
             st.info("Haz clic en 'Generar Estado de Cuenta' para cargar los datos.")
 
-# ====================== TAB 2: RESUMEN POR TORRES (MODIFICADO) ======================
+# ====================== TAB 2: RESUMEN POR TORRES ======================
 with tab2:
     st.subheader("Resumen de Saldos por Departamento")
 
@@ -597,7 +616,7 @@ with tab2:
         total_pag_gral = resumen['total_pagado'].sum()
         total_saldo_gral = resumen['saldo_a_pagar'].sum()
 
-        # 🔥 NUEVO: Presentación personalizada de los 5 totales sin truncamiento 🔥
+        # Presentación personalizada de los 5 totales sin truncamiento
         st.markdown(
             """
             <style>
