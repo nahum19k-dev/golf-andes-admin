@@ -21,7 +21,7 @@ if 'fecha_emision' not in st.session_state:
 if 'fecha_vencimiento' not in st.session_state:
     st.session_state.fecha_vencimiento = None
 
-# ========== FUNCIONES AUXILIARES (sin cambios) ==========
+# ========== FUNCIONES AUXILIARES ==========
 def obtener_mes_anterior(mes: str, anio: int):
     meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
@@ -161,28 +161,28 @@ with tab1:
             try:
                 # ========== VERIFICAR SI YA EXISTE REPORTE ==========
                 reporte_existente = gsheets.existe_reporte_mensual(anio, mes)
-                
+
                 if reporte_existente:
                     st.info(f"✅ Reporte de {mes} {anio} ya existe. Cargando datos guardados...")
                     df_final = gsheets.leer_reporte_mensual(anio, mes)
                     if df_final.empty:
                         st.error("No se pudo cargar el reporte guardado.")
                         st.stop()
-                    
+
                     # Restaurar columnas necesarias
                     if '#' not in df_final.columns:
                         df_final.insert(0, '#', range(1, len(df_final)+1))
-                    
+
                     st.session_state.df_final = df_final.copy()
                     st.session_state.datos_cargados = True
                     st.session_state.mes_actual = mes
                     st.session_state.anio_actual = anio
-                    
+
                     # Obtener fechas del período (si existen)
                     fecha_emi, fecha_ven = gsheets.obtener_fechas_programacion("Mantenimiento", mes, anio)
                     st.session_state.fecha_emision = fecha_emi
                     st.session_state.fecha_vencimiento = fecha_ven
-                    
+
                     # Aplicar filtro si se especificó
                     if codigo_filtro.strip():
                         mask = df_final['codigo'].astype(str).str.contains(codigo_filtro.strip(), case=False, na=False)
@@ -193,13 +193,13 @@ with tab1:
                             df_final = df_final.reset_index(drop=True)
                             df_final.index = df_final.index + 1
                             df_final['#'] = df_final.index
-                    
+
                     if fecha_emi and fecha_ven:
                         st.info(f"📅 **Período de programación:** {fecha_emi.strftime('%d/%m/%Y')} al {fecha_ven.strftime('%d/%m/%Y')}")
                     else:
                         st.warning("⚠️ No se encontró información de fechas para este período.")
-                    
-                    # Mostrar tabla
+
+                    # Mostrar tabla HTML (igual que antes)
                     col_names = list(df_final.columns)
                     grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion']
                     grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'otros_pago', 'total_pagado', 'saldo']
@@ -219,7 +219,7 @@ with tab1:
                         pagos_last = max(pagos_indices)
                         pagos_span = pagos_last - pagos_first + 1
 
-                        html += '            <tr>\n'
+                        html += '             <tr>\n'
                         for i in range(prog_first):
                             html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                         html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -228,21 +228,21 @@ with tab1:
                         html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                         for i in range(pagos_last+1, len(col_names)):
                             html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                        html += '            </tr>\n'
+                        html += '             </tr>\n'
 
-                    html += '            <tr>\n'
+                    html += '             <tr>\n'
                     for col in col_names:
                         html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                    html += '            </tr>\n'
+                    html += '             </tr>\n'
                     html += '</thead>\n<tbody>\n'
 
                     for _, row in df_final.iterrows():
-                        html += '            <tr>\n'
+                        html += '             <tr>\n'
                         for col in col_names:
                             val = row[col]
                             align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                             html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                        html += '            </tr>\n'
+                        html += '             </tr>\n'
                     html += '</tbody>\n</table>\n</div>'
 
                     st.markdown(html, unsafe_allow_html=True)
@@ -259,13 +259,13 @@ with tab1:
                         file_name=f"Operaciones_{mes}_{anio}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
-                    
+
                     # Salir para no ejecutar la generación
                     st.stop()
-                
+
                 # ========== SI NO EXISTE, GENERAR NUEVO REPORTE ==========
                 st.info(f"Generando reporte para {mes} {anio} por primera vez...")
-                
+
                 # ========== PROPIETARIOS ==========
                 prop = gsheets.leer_propietarios()
                 if prop.empty:
@@ -293,9 +293,10 @@ with tab1:
 
                 # ========== DEUDA INICIAL DEL MES ==========
                 if mes == "Enero":
+                    # Enero: leer deuda almacenada
                     deuda_almacenada = gsheets.leer_deuda_inicial(anio)
                     if deuda_almacenada.empty:
-                        st.warning(f"No se encontró 'Deuda Inicial {anio}'. Se usará 0.")
+                        st.warning(f"No se encontró 'Deuda Inicial {anio}'. Se usará 0 como deuda inicial.")
                         deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
                     else:
                         col_t = None; col_d = None; col_dd = None
@@ -314,15 +315,28 @@ with tab1:
                             st.warning("No se identificaron columnas de deuda. Se usará 0.")
                             deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
                 else:
-                    # Leer saldo del mes anterior desde saldos_mensuales
+                    # Meses siguientes: leer reporte del mes anterior desde reportes_mensuales
                     mes_anterior, anio_anterior = obtener_mes_anterior(mes, anio)
-                    deuda_df = gsheets.leer_saldos_mensuales(anio_anterior, mes_anterior)
-                    if deuda_df.empty:
-                        st.warning(f"No se encontró saldo guardado para {mes_anterior} {anio_anterior}. Se recalculará desde hojas.")
+                    df_reporte_anterior = gsheets.leer_reporte_mensual(anio_anterior, mes_anterior)
+                    if df_reporte_anterior.empty:
+                        st.warning(f"No se encontró reporte para {mes_anterior} {anio_anterior}. Se recalculará desde hojas.")
                         deuda_df = calcular_balance_mes_anterior(mes, anio, base)
                     else:
-                        deuda_df = deuda_df.rename(columns={'saldo_final': 'deuda_inicial'})
-                    st.info(f"Deuda inicial obtenida del saldo guardado de {mes_anterior} {anio_anterior}.")
+                        # Extraer último saldo por departamento del reporte anterior
+                        # La columna 'saldo' puede estar como string con formato; la convertimos a numérico
+                        def limpiar_numero(x):
+                            if pd.isna(x):
+                                return 0.0
+                            s = str(x).strip()
+                            s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
+                            try:
+                                return float(s)
+                            except:
+                                return 0.0
+                        df_reporte_anterior['saldo_clean'] = df_reporte_anterior['saldo'].apply(limpiar_numero)
+                        ultimo_saldo = df_reporte_anterior.groupby(['torre', 'departamento'])['saldo_clean'].last().reset_index()
+                        deuda_df = ultimo_saldo.rename(columns={'saldo_clean': 'deuda_inicial'})
+                    st.info(f"Deuda inicial obtenida del reporte guardado de {mes_anterior} {anio_anterior}.")
 
                 # ========== PROGRAMACIÓN ==========
                 prog_df = gsheets.leer_programacion(mes, anio)
@@ -471,22 +485,6 @@ with tab1:
 
                 df_mov = pd.DataFrame(movimientos)
 
-                # ========== GUARDAR AGREGADOS EN saldos_mensuales ==========
-                # Extraer datos agregados por departamento
-                agrupado = df_mov.groupby(['torre', 'departamento']).agg({
-                    'deuda_inicial': 'first',
-                    'mantenimiento': 'first',
-                    'amortizacion': 'first',
-                    'medidor': 'first',
-                    'otros': 'first',
-                    'total_pagado': 'sum',
-                    'saldo': 'last'
-                }).reset_index()
-                agrupado.rename(columns={'saldo': 'saldo_final'}, inplace=True)
-                agrupado['anio'] = anio
-                agrupado['mes'] = mes
-                gsheets.guardar_saldos_mensuales(agrupado)  # usa la función existente que hace upsert
-
                 # ========== FORMATEAR NÚMEROS PARA MOSTRAR ==========
                 def fmt_num(val):
                     try:
@@ -563,7 +561,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '            <tr>\n'
+                    html += '             <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -572,21 +570,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '            </tr>\n'
+                    html += '             </tr>\n'
 
-                html += '            <tr>\n'
+                html += '             <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '            </tr>\n'
+                html += '             </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '            <tr>\n'
+                    html += '             <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '            </tr>\n'
+                    html += '             </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -614,7 +612,6 @@ with tab1:
             st.info("Haz clic en 'Generar Estado de Cuenta' para cargar los datos.")
 
 # ====================== TAB 2: RESUMEN POR TORRES ======================
-# (Esta parte permanece exactamente igual que antes, porque usa st.session_state.df_final)
 with tab2:
     st.subheader("Resumen de Saldos por Departamento")
 
@@ -623,7 +620,7 @@ with tab2:
     else:
         df_resumen = st.session_state.df_final.copy()
 
-        # Limpieza de columnas (igual que antes)
+        # Limpieza de columnas
         if isinstance(df_resumen.columns, pd.MultiIndex):
             df_resumen.columns = [col[1] if col[1] else col[0] for col in df_resumen.columns]
 
@@ -733,7 +730,7 @@ with tab2:
         total_pag_gral = resumen['total_pagado'].sum()
         total_saldo_gral = resumen['saldo_a_pagar'].sum()
 
-        # Presentación personalizada (como antes)
+        # Presentación personalizada de los 5 totales sin truncamiento
         st.markdown(
             """
             <style>
@@ -811,6 +808,7 @@ with tab2:
             if resumen_final.empty:
                 st.warning("No se encontraron resultados.")
 
+        # Mostrar dataframe
         column_config = {
             "TOTAL PROGRAMACIÓN": st.column_config.TextColumn("TOTAL PROGRAMACIÓN", width="medium"),
             "TOTAL DEUDA": st.column_config.TextColumn("TOTAL DEUDA", width="medium"),
