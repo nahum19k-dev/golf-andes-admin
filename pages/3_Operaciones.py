@@ -187,7 +187,7 @@ with tab1:
                 # ========== DEUDA INICIAL DEL MES ==========
                 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
                 if mes == "Enero":
-                    # Enero: leer deuda almacenada (como antes)
+                    # Enero: leer deuda almacenada
                     deuda_almacenada = gsheets.leer_deuda_inicial(anio)
                     if deuda_almacenada.empty:
                         st.warning(f"No se encontró 'Deuda Inicial {anio}'. Se usará 0 como deuda inicial.")
@@ -366,6 +366,17 @@ with tab1:
 
                 df_mov = pd.DataFrame(movimientos)
 
+                # ========== GUARDAR SALDO NUMÉRICO PARA EL PRÓXIMO MES ==========
+                ultimo_saldo_numeric = df_mov.groupby(['torre', 'departamento'])['saldo'].last().reset_index()
+                ultimo_saldo_numeric['anio'] = anio
+                ultimo_saldo_numeric['mes'] = mes
+                try:
+                    gsheets.guardar_saldos_mensuales(ultimo_saldo_numeric)
+                    st.success(f"✅ Saldo final de {mes} guardado correctamente.")
+                except Exception as e:
+                    st.warning(f"⚠️ No se pudo guardar el saldo final: {e}")
+
+                # ========== FORMATEAR NÚMEROS PARA MOSTRAR ==========
                 def fmt_num(val):
                     try:
                         if pd.isna(val) or val == '':
@@ -393,16 +404,6 @@ with tab1:
                 df_final = df_final.reset_index(drop=True)
                 df_final.insert(0, '#', range(1, len(df_final)+1))
 
-                # ========== GUARDAR SALDO FINAL EN TABLA SALDOS_MENSUALES ==========
-                # (NUEVO) Extraer el último saldo por departamento y guardarlo
-                ultimo_saldo = df_final.groupby(['torre', 'departamento'])['saldo'].last().reset_index()
-                ultimo_saldo['anio'] = anio
-                ultimo_saldo['mes'] = mes
-                try:
-                    gsheets.guardar_saldos_mensuales(ultimo_saldo)
-                except Exception as e:
-                    st.warning(f"No se pudo guardar el saldo final en la base de datos: {e}")
-
                 st.session_state.df_final = df_final.copy()
                 st.session_state.datos_cargados = True
                 st.session_state.mes_actual = mes
@@ -427,7 +428,7 @@ with tab1:
                 else:
                     st.warning("⚠️ No se encontró información de fechas para este período en la hoja de control.")
 
-                # Mostrar tabla HTML (igual que antes)
+                # Mostrar tabla HTML
                 col_names = list(df_final.columns)
                 grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion']
                 grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'otros_pago', 'total_pagado', 'saldo']
