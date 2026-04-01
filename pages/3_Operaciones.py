@@ -51,97 +51,6 @@ def leer_otros_mes(mes: str, anio: int):
     df_otros = df_otros.dropna(subset=['torre', 'departamento'])
     return df_otros[['torre', 'departamento', 'otros']].copy()
 
-def calcular_balance_mes_anterior(mes: str, anio: int, prop_df: pd.DataFrame):
-    """Función de respaldo: calcula el saldo del mes anterior desde las hojas."""
-    mes_ant, anio_ant = obtener_mes_anterior(mes, anio)
-
-    deuda_ant = gsheets.leer_deuda_inicial(anio_ant)
-    prog_ant = gsheets.leer_programacion(mes_ant, anio_ant)
-    amort_ant = gsheets.leer_amortizacion(mes_ant, anio_ant)
-    med_ant = gsheets.leer_medidores(mes_ant, anio_ant)
-    otros_ant = leer_otros_mes(mes_ant, anio_ant)
-    pagos_ant = gsheets.leer_pagos_mes(mes_ant, anio_ant)
-
-    base = prop_df[['torre', 'departamento', 'codigo', 'dni', 'nombre']].copy()
-
-    # Deuda inicial
-    if not deuda_ant.empty:
-        col_t = None; col_d = None; col_dd = None
-        for col in deuda_ant.columns:
-            col_low = col.lower()
-            if 'torre' in col_low: col_t = col
-            elif 'dpto' in col_low or 'departamento' in col_low: col_d = col
-            elif 'deuda' in col_low: col_dd = col
-        if col_t and col_d and col_dd:
-            deuda_ant = deuda_ant[[col_t, col_d, col_dd]].copy()
-            deuda_ant.rename(columns={col_t: 'torre', col_d: 'departamento', col_dd: 'deuda_inicial'}, inplace=True)
-            deuda_ant['torre'] = pd.to_numeric(deuda_ant['torre'], errors='coerce')
-            deuda_ant['departamento'] = pd.to_numeric(deuda_ant['departamento'], errors='coerce')
-            deuda_ant['deuda_inicial'] = pd.to_numeric(deuda_ant['deuda_inicial'], errors='coerce').fillna(0)
-        else:
-            deuda_ant = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
-    else:
-        deuda_ant = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
-
-    # Programación
-    if not prog_ant.empty:
-        prog_ant = prog_ant[['torre', 'departamento', 'Mantenimiento']].copy()
-        prog_ant['Mantenimiento'] = pd.to_numeric(prog_ant['Mantenimiento'], errors='coerce').fillna(0)
-    else:
-        prog_ant = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
-
-    # Amortización
-    if not amort_ant.empty:
-        amort_ant = amort_ant[['torre', 'departamento', 'amortizacion']].copy()
-        amort_ant['amortizacion'] = pd.to_numeric(amort_ant['amortizacion'], errors='coerce').fillna(0)
-    else:
-        amort_ant = pd.DataFrame(columns=['torre', 'departamento', 'amortizacion'])
-
-    # Medidores
-    if not med_ant.empty:
-        med_ant = med_ant[['torre', 'departamento', 'monto']].copy()
-        med_ant['monto'] = pd.to_numeric(med_ant['monto'], errors='coerce').fillna(0)
-        med_ant.rename(columns={'monto': 'medidor'}, inplace=True)
-    else:
-        med_ant = pd.DataFrame(columns=['torre', 'departamento', 'medidor'])
-
-    # Otros
-    if not otros_ant.empty:
-        otros_ant = otros_ant[['torre', 'departamento', 'otros']].copy()
-        otros_ant['otros'] = pd.to_numeric(otros_ant['otros'], errors='coerce').fillna(0)
-    else:
-        otros_ant = pd.DataFrame(columns=['torre', 'departamento', 'otros'])
-
-    # Pagos
-    if not pagos_ant.empty:
-        if 'ingresos' not in pagos_ant.columns:
-            conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
-                         'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
-            pagos_ant['ingresos'] = pagos_ant[conceptos].sum(axis=1)
-        pagos_ant = pagos_ant.groupby(['torre', 'departamento'])['ingresos'].sum().reset_index()
-        pagos_ant.rename(columns={'ingresos': 'total_pagado'}, inplace=True)
-    else:
-        pagos_ant = pd.DataFrame(columns=['torre', 'departamento', 'total_pagado'])
-
-    df_ant = base.merge(deuda_ant, on=['torre', 'departamento'], how='left').fillna(0)
-    df_ant = df_ant.merge(prog_ant, on=['torre', 'departamento'], how='left').fillna(0)
-    df_ant = df_ant.merge(amort_ant, on=['torre', 'departamento'], how='left').fillna(0)
-    df_ant = df_ant.merge(med_ant, on=['torre', 'departamento'], how='left').fillna(0)
-    df_ant = df_ant.merge(otros_ant, on=['torre', 'departamento'], how='left').fillna(0)
-    df_ant = df_ant.merge(pagos_ant, on=['torre', 'departamento'], how='left').fillna(0)
-
-    df_ant['saldo'] = (df_ant['deuda_inicial'] +
-                       df_ant['Mantenimiento'] +
-                       df_ant['amortizacion'] +
-                       df_ant['medidor'] +
-                       df_ant['otros'] -
-                       df_ant['total_pagado'])
-
-    df_ant['deuda_inicial_siguiente'] = df_ant['saldo'].clip(lower=0)
-    return df_ant[['torre', 'departamento', 'deuda_inicial_siguiente']].rename(
-        columns={'deuda_inicial_siguiente': 'deuda_inicial'}
-    )
-
 # ========== CREAR PESTAÑAS ==========
 tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
 
@@ -159,113 +68,6 @@ with tab1:
     if st.button("Generar Estado de Cuenta", type="primary"):
         with st.spinner("Cargando datos..."):
             try:
-                # ========== VERIFICAR SI YA EXISTE REPORTE ==========
-                reporte_existente = gsheets.existe_reporte_mensual(anio, mes)
-
-                if reporte_existente:
-                    st.info(f"✅ Reporte de {mes} {anio} ya existe. Cargando datos guardados...")
-                    df_final = gsheets.leer_reporte_mensual(anio, mes)
-                    if df_final.empty:
-                        st.error("No se pudo cargar el reporte guardado.")
-                        st.stop()
-
-                    # Restaurar columnas necesarias
-                    if '#' not in df_final.columns:
-                        df_final.insert(0, '#', range(1, len(df_final)+1))
-
-                    st.session_state.df_final = df_final.copy()
-                    st.session_state.datos_cargados = True
-                    st.session_state.mes_actual = mes
-                    st.session_state.anio_actual = anio
-
-                    # Obtener fechas del período (si existen)
-                    fecha_emi, fecha_ven = gsheets.obtener_fechas_programacion("Mantenimiento", mes, anio)
-                    st.session_state.fecha_emision = fecha_emi
-                    st.session_state.fecha_vencimiento = fecha_ven
-
-                    # Aplicar filtro si se especificó
-                    if codigo_filtro.strip():
-                        mask = df_final['codigo'].astype(str).str.contains(codigo_filtro.strip(), case=False, na=False)
-                        df_final = df_final[mask].copy()
-                        if df_final.empty:
-                            st.warning(f"No se encontraron movimientos para el código '{codigo_filtro}'")
-                        else:
-                            df_final = df_final.reset_index(drop=True)
-                            df_final.index = df_final.index + 1
-                            df_final['#'] = df_final.index
-
-                    if fecha_emi and fecha_ven:
-                        st.info(f"📅 **Período de programación:** {fecha_emi.strftime('%d/%m/%Y')} al {fecha_ven.strftime('%d/%m/%Y')}")
-                    else:
-                        st.warning("⚠️ No se encontró información de fechas para este período.")
-
-                    # Mostrar tabla HTML (igual que antes)
-                    col_names = list(df_final.columns)
-                    grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion']
-                    grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'otros_pago', 'total_pagado', 'saldo']
-
-                    prog_indices = [i for i, col in enumerate(col_names) if col in grupo_prog]
-                    pagos_indices = [i for i, col in enumerate(col_names) if col in grupo_pagos]
-
-                    html = '<div style="overflow-x: auto; max-width: 100%;">\n'
-                    html += '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">\n'
-                    html += '<thead>\n'
-
-                    if prog_indices and pagos_indices:
-                        prog_first = min(prog_indices)
-                        prog_last = max(prog_indices)
-                        prog_span = prog_last - prog_first + 1
-                        pagos_first = min(pagos_indices)
-                        pagos_last = max(pagos_indices)
-                        pagos_span = pagos_last - pagos_first + 1
-
-                        html += '             <tr>\n'
-                        for i in range(prog_first):
-                            html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                        html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
-                        for i in range(prog_last+1, pagos_first):
-                            html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                        html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
-                        for i in range(pagos_last+1, len(col_names)):
-                            html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                        html += '             </tr>\n'
-
-                    html += '             <tr>\n'
-                    for col in col_names:
-                        html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                    html += '             </tr>\n'
-                    html += '</thead>\n<tbody>\n'
-
-                    for _, row in df_final.iterrows():
-                        html += '             <tr>\n'
-                        for col in col_names:
-                            val = row[col]
-                            align = 'right' if col in grupo_prog + grupo_pagos else 'left'
-                            html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                        html += '             </tr>\n'
-                    html += '</tbody>\n</table>\n</div>'
-
-                    st.markdown(html, unsafe_allow_html=True)
-
-                    # Descarga a Excel (siempre desde el df_final cargado)
-                    import io
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_final.to_excel(writer, index=False, sheet_name=f"Operaciones_{mes}_{anio}")
-                    excel_data = output.getvalue()
-                    st.download_button(
-                        label="📥 Descargar Excel",
-                        data=excel_data,
-                        file_name=f"Operaciones_{mes}_{anio}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-
-                    # Salir para no ejecutar la generación
-                    st.stop()
-
-                # ========== SI NO EXISTE, GENERAR NUEVO REPORTE ==========
-                st.info(f"Generando reporte para {mes} {anio} por primera vez...")
-
                 # ========== PROPIETARIOS ==========
                 prop = gsheets.leer_propietarios()
                 if prop.empty:
@@ -315,15 +117,15 @@ with tab1:
                             st.warning("No se identificaron columnas de deuda. Se usará 0.")
                             deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
                 else:
-                    # Meses siguientes: leer reporte del mes anterior desde reportes_mensuales
+                    # Meses siguientes: obtener deuda inicial del reporte del mes anterior
                     mes_anterior, anio_anterior = obtener_mes_anterior(mes, anio)
                     df_reporte_anterior = gsheets.leer_reporte_mensual(anio_anterior, mes_anterior)
                     if df_reporte_anterior.empty:
-                        st.warning(f"No se encontró reporte para {mes_anterior} {anio_anterior}. Se recalculará desde hojas.")
-                        deuda_df = calcular_balance_mes_anterior(mes, anio, base)
+                        st.error(f"❌ No se puede generar {mes} {anio} porque no existe el reporte de {mes_anterior} {anio_anterior}.\n\n"
+                                 f"Por favor, genera primero el reporte del mes anterior.")
+                        st.stop()
                     else:
-                        # Extraer último saldo por departamento del reporte anterior
-                        # La columna 'saldo' puede estar como string con formato; la convertimos a numérico
+                        # Extraer último saldo por departamento
                         def limpiar_numero(x):
                             if pd.isna(x):
                                 return 0.0
@@ -336,7 +138,7 @@ with tab1:
                         df_reporte_anterior['saldo_clean'] = df_reporte_anterior['saldo'].apply(limpiar_numero)
                         ultimo_saldo = df_reporte_anterior.groupby(['torre', 'departamento'])['saldo_clean'].last().reset_index()
                         deuda_df = ultimo_saldo.rename(columns={'saldo_clean': 'deuda_inicial'})
-                    st.info(f"Deuda inicial obtenida del reporte guardado de {mes_anterior} {anio_anterior}.")
+                        st.info(f"Deuda inicial obtenida del reporte guardado de {mes_anterior} {anio_anterior}.")
 
                 # ========== PROGRAMACIÓN ==========
                 prog_df = gsheets.leer_programacion(mes, anio)
@@ -513,7 +315,7 @@ with tab1:
                 df_final = df_final.reset_index(drop=True)
                 df_final.insert(0, '#', range(1, len(df_final)+1))
 
-                # ========== GUARDAR REPORTE COMPLETO ==========
+                # ========== GUARDAR REPORTE COMPLETO (SOBRESCRIBIR) ==========
                 gsheets.guardar_reporte_mensual(anio, mes, df_final)
                 st.success(f"✅ Reporte de {mes} {anio} guardado correctamente.")
 
@@ -541,7 +343,7 @@ with tab1:
                 else:
                     st.warning("⚠️ No se encontró información de fechas para este período en la hoja de control.")
 
-                # Mostrar tabla HTML (igual que antes)
+                # Mostrar tabla HTML
                 col_names = list(df_final.columns)
                 grupo_prog = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_programacion']
                 grupo_pagos = ['n_operacion', 'mantenimiento_pago', 'amortizacion_pago', 'medidor_pago', 'otros_pago', 'total_pagado', 'saldo']
@@ -561,7 +363,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '             <tr>\n'
+                    html += '              <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -570,21 +372,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '             </tr>\n'
+                    html += '              </tr>\n'
 
-                html += '             <tr>\n'
+                html += '              <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '             </tr>\n'
+                html += '              </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '             <tr>\n'
+                    html += '              <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '             </tr>\n'
+                    html += '              </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -808,7 +610,6 @@ with tab2:
             if resumen_final.empty:
                 st.warning("No se encontraron resultados.")
 
-        # Mostrar dataframe
         column_config = {
             "TOTAL PROGRAMACIÓN": st.column_config.TextColumn("TOTAL PROGRAMACIÓN", width="medium"),
             "TOTAL DEUDA": st.column_config.TextColumn("TOTAL DEUDA", width="medium"),
