@@ -37,7 +37,7 @@ with tab1:
 
         # Limpiar NaN y la cadena literal "nan"
         mostrar = mostrar.fillna('')
-        mostrar = mostrar.applymap(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
+        mostrar = mostrar.map(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
 
         st.markdown(f"Mostrando **{len(mostrar)}** propietarios")
         tabla = mostrar[["codigo","torre","dpto","dni","nombre","celular","correo","situacion"]].copy()
@@ -190,9 +190,6 @@ with tab2:
                 dni = str(fila['dni']).strip()
                 if not dni or dni.lower() == 'nan':
                     cod_counter += 1
-                    # Actualizar el contador en Supabase después de cada uso (o al final)
-                    # Para simplificar, lo actualizaremos al final, pero si se quiere por cada registro, se puede.
-                    # En este bucle, solo calculamos, luego actualizaremos al final.
                     dni = f"COD{cod_counter}"
                 nuevas_filas.append({
                     'torre': fila['torre'],
@@ -208,13 +205,6 @@ with tab2:
 
             # Si se generaron nuevos códigos, actualizar el contador en Supabase
             if cod_counter > ultimo_codigo:
-                # Para mantener consistencia, actualizamos al último valor usado
-                # Primero debemos obtener el contador actual y sumar la cantidad de nuevos códigos generados
-                # Pero como usamos cod_counter como acumulador, simplemente actualizamos con ese valor.
-                # Nota: en Supabase, la función obtener_siguiente_codigo() ya incrementa y devuelve,
-                # pero aquí estamos haciendo el bucle manualmente. Para evitar múltiples llamadas,
-                # podemos hacer una sola actualización al final con el nuevo valor.
-                # Como no tenemos una función "actualizar_codigo(valor)", creamos una:
                 supabase = gsheets.get_supabase()
                 response = supabase.table('control_codigos').select('id').execute()
                 if response.data:
@@ -226,7 +216,7 @@ with tab2:
             st.success(f"✅ {len(nuevas_filas)} registro(s) listo(s) para subir.")
             df_preview = pd.DataFrame(nuevas_filas).fillna('')
             # Limpiar la cadena "nan"
-            df_preview = df_preview.applymap(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
+            df_preview = df_preview.map(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
             st.write("Vista previa:")
             st.dataframe(df_preview, use_container_width=True)
 
@@ -325,7 +315,7 @@ with tab3:
 
                 # Limpiar NaN y la cadena literal "nan"
                 df_deuda = df_deuda.fillna('')
-                df_deuda = df_deuda.applymap(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
+                df_deuda = df_deuda.map(lambda x: '' if isinstance(x, str) and x.lower() == 'nan' else x)
 
                 def formatear_numero(valor):
                     try:
