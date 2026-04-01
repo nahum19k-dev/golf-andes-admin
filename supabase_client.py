@@ -612,6 +612,39 @@ def existe_reporte_mensual(anio: int, mes: str) -> bool:
         .execute()
     return len(response.data) > 0
 
+# ====================== SALDOS MENSUALES (NUEVO) ======================
+def guardar_saldos_mensuales(df: pd.DataFrame) -> None:
+    """
+    Guarda los agregados por departamento en la tabla saldos_mensuales.
+    df debe tener columnas: anio, mes, torre, departamento, deuda_inicial,
+    mantenimiento, amortizacion, medidor, otros, total_pagado, saldo_final.
+    """
+    supabase = get_supabase()
+    df_clean = limpiar_nan_para_json(df)
+    data = df_clean.to_dict(orient='records')
+    supabase.table('saldos_mensuales').upsert(
+        data,
+        on_conflict='anio, mes, torre, departamento'
+    ).execute()
+
+def leer_saldos_mensuales(anio: int, mes: str) -> pd.DataFrame:
+    """
+    Devuelve un DataFrame con los saldos del mes indicado.
+    """
+    supabase = get_supabase()
+    response = supabase.table('saldos_mensuales')\
+        .select('torre, departamento, deuda_inicial, mantenimiento, amortizacion, medidor, otros, total_pagado, saldo_final')\
+        .eq('anio', anio)\
+        .eq('mes', mes)\
+        .execute()
+    if response.data:
+        df = pd.DataFrame(response.data)
+        num_cols = ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_pagado', 'saldo_final']
+        for col in num_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        return df
+    return pd.DataFrame(columns=['torre', 'departamento', 'saldo_final'])
+
 # ====================== CONTROL DE CÓDIGOS ======================
 def obtener_ultimo_codigo() -> int:
     supabase = get_supabase()
