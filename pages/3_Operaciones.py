@@ -95,7 +95,6 @@ with tab1:
 
                 # ========== DEUDA INICIAL DEL MES ==========
                 if mes == "Enero":
-                    # Enero: leer deuda almacenada
                     deuda_almacenada = gsheets.leer_deuda_inicial(anio)
                     if deuda_almacenada.empty:
                         st.warning(f"No se encontró 'Deuda Inicial {anio}'. Se usará 0 como deuda inicial.")
@@ -117,7 +116,6 @@ with tab1:
                             st.warning("No se identificaron columnas de deuda. Se usará 0.")
                             deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
                 else:
-                    # Meses siguientes: obtener deuda inicial del reporte del mes anterior
                     mes_anterior, anio_anterior = obtener_mes_anterior(mes, anio)
                     df_reporte_anterior = gsheets.leer_reporte_mensual(anio_anterior, mes_anterior)
                     if df_reporte_anterior.empty:
@@ -125,7 +123,6 @@ with tab1:
                                  f"Por favor, genera primero el reporte del mes anterior.")
                         st.stop()
                     else:
-                        # Extraer último saldo por departamento
                         def limpiar_numero(x):
                             if pd.isna(x):
                                 return 0.0
@@ -363,7 +360,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '              <tr>\n'
+                    html += '               <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -372,21 +369,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '              </tr>\n'
+                    html += '               </tr>\n'
 
-                html += '              <tr>\n'
+                html += '               <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '              </tr>\n'
+                html += '               </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '              <tr>\n'
+                    html += '               <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '              </tr>\n'
+                    html += '               </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
