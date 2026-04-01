@@ -404,17 +404,20 @@ def eliminar_programacion(nombre_hoja: str) -> bool:
     supabase.table('control_fechas').delete().eq('nombre_hoja', nombre_hoja).execute()
     return eliminada
 
-# ====================== LECTURAS ESPECÍFICAS PARA OPERACIONES ======================
+# ====================== LECTURAS ESPECÍFICAS PARA OPERACIONES (AGRUPADAS) ======================
 def leer_programacion(mes: str, anio: int):
     nombre_hoja = f"Prog_{mes.upper()}_{anio}"
     df = leer_hoja_programacion(nombre_hoja)
     if df.empty:
         return df
+    # Asegurar columnas numéricas
     for col in ['torre', 'departamento', 'Mantenimiento']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     df = df.dropna(subset=['torre', 'departamento'])
-    return df[['torre', 'departamento', 'Mantenimiento']]
+    # Agrupar por torre y departamento y sumar Mantenimiento
+    df_agrupado = df.groupby(['torre', 'departamento'], as_index=False)['Mantenimiento'].sum()
+    return df_agrupado
 
 def leer_amortizacion(mes: str, anio: int):
     nombre_hoja = f"Amortización {mes} {anio}"
@@ -424,7 +427,9 @@ def leer_amortizacion(mes: str, anio: int):
     for col in ['torre', 'departamento', 'amortizacion']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-    return df[['torre', 'departamento', 'amortizacion']]
+    df = df.dropna(subset=['torre', 'departamento'])
+    df_agrupado = df.groupby(['torre', 'departamento'], as_index=False)['amortizacion'].sum()
+    return df_agrupado
 
 def leer_medidores(mes: str, anio: int):
     nombre_hoja = f"Medidor {mes} {anio}"
@@ -434,7 +439,31 @@ def leer_medidores(mes: str, anio: int):
     for col in ['torre', 'departamento', 'monto']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-    return df[['torre', 'departamento', 'monto']]
+    df = df.dropna(subset=['torre', 'departamento'])
+    df_agrupado = df.groupby(['torre', 'departamento'], as_index=False)['monto'].sum()
+    return df_agrupado
+
+def leer_otros_mes(mes: str, anio: int):
+    nombre_hoja = f"Otros {mes} {anio}"
+    df_otros = leer_hoja_otros(nombre_hoja)
+    if df_otros.empty:
+        return pd.DataFrame(columns=['torre', 'departamento', 'otros'])
+
+    df_otros.columns = df_otros.columns.str.strip().str.lower()
+    conceptos = ['cuota_extraordinarias', 'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
+    for c in conceptos:
+        if c not in df_otros.columns:
+            df_otros[c] = 0
+    for c in conceptos:
+        df_otros[c] = pd.to_numeric(df_otros[c], errors='coerce').fillna(0)
+    df_otros['otros'] = df_otros[conceptos].sum(axis=1)
+
+    df_otros['torre'] = pd.to_numeric(df_otros['torre'], errors='coerce')
+    df_otros['departamento'] = pd.to_numeric(df_otros['departamento'], errors='coerce')
+    df_otros = df_otros.dropna(subset=['torre', 'departamento'])
+    # Agrupar por si hay múltiples filas para el mismo departamento
+    df_agrupado = df_otros.groupby(['torre', 'departamento'], as_index=False)['otros'].sum()
+    return df_agrupado[['torre', 'departamento', 'otros']].copy()
 
 def leer_deuda_inicial(anio: int):
     nombre_hoja = f"Deuda Inicial {anio}"
@@ -446,7 +475,7 @@ def leer_deuda_inicial(anio: int):
             return df_ant
     return df
 
-# ====================== NUEVAS FUNCIONES: REPORTES MENSUALES ======================
+# ====================== REPORTES MENSUALES ======================
 def guardar_reporte_mensual(anio: int, mes: str, df: pd.DataFrame) -> None:
     """
     Guarda el DataFrame completo de movimientos en la tabla reportes_mensuales.
