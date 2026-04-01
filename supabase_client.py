@@ -108,7 +108,7 @@ def leer_hoja_programacion(nombre_hoja):
     response = supabase.table('programacion').select('datos').eq('nombre_hoja', nombre_hoja).execute()
     if response.data:
         df = pd.DataFrame(response.data[0]['datos'])
-        df = limpiar_nombres_columnas(df)  # solo quita espacios
+        df = limpiar_nombres_columnas(df)
         return df
     return pd.DataFrame()
 
@@ -133,7 +133,6 @@ def guardar_pagos(df: pd.DataFrame, mes: str, anio: int) -> str:
     if 'ingresos' not in df.columns:
         conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
                      'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
-        # Asegurar que todas las columnas existan
         for c in conceptos:
             if c not in df.columns:
                 df[c] = 0
@@ -172,22 +171,18 @@ def leer_pagos_mes(mes: str, anio: int):
         df = pd.DataFrame(response.data[0]['datos'])
         df = limpiar_nombres_columnas(df)
 
-        # Lista de todos los conceptos que pueden formar el total
         conceptos = ['mantenimiento', 'amortizacion', 'medidor', 'cuota_extraordinaria',
                      'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
 
-        # Asegurar que todas las columnas numéricas existan y sean numéricas
         for col in conceptos + ['torre', 'departamento', 'ingresos']:
             if col not in df.columns:
                 df[col] = 0
             else:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-        # Calcular ingresos si no existe o si está vacía
         if 'ingresos' not in df.columns or df['ingresos'].sum() == 0:
             df['ingresos'] = df[conceptos].sum(axis=1)
 
-        # Convertir fecha
         if 'fecha' in df.columns:
             df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
 
@@ -415,7 +410,6 @@ def leer_programacion(mes: str, anio: int):
     df = leer_hoja_programacion(nombre_hoja)
     if df.empty:
         return df
-    # Convertir a numérico las columnas que corresponden
     for col in ['torre', 'departamento', 'Mantenimiento']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -452,36 +446,47 @@ def leer_deuda_inicial(anio: int):
             return df_ant
     return df
 
-# ====================== NUEVAS FUNCIONES: SALDOS MENSUALES ======================
-def guardar_saldos_mensuales(df: pd.DataFrame):
+# ====================== NUEVAS FUNCIONES: REPORTES MENSUALES ======================
+def guardar_reporte_mensual(anio: int, mes: str, df: pd.DataFrame) -> None:
     """
-    Guarda los saldos finales de un mes en la tabla saldos_mensuales.
-    df debe tener las columnas: anio, mes, torre, departamento, saldo_final.
+    Guarda el DataFrame completo de movimientos en la tabla reportes_mensuales.
+    Si ya existe, lo sobrescribe (upsert).
     """
     supabase = get_supabase()
-    df_clean = limpiar_nan_para_json(df)
-    datos = df_clean.to_dict(orient='records')
-    # Upsert basado en la restricción UNIQUE (anio, mes, torre, departamento)
-    supabase.table('saldos_mensuales').upsert(
-        datos,
-        on_conflict='anio, mes, torre, departamento'
+    datos_json = df.to_json(orient='records', date_format='iso')
+    supabase.table('reportes_mensuales').upsert(
+        {'anio': anio, 'mes': mes, 'datos_json': datos_json},
+        on_conflict='anio, mes'
     ).execute()
 
-def leer_saldos_mensuales(anio: int, mes: str) -> pd.DataFrame:
+def leer_reporte_mensual(anio: int, mes: str) -> pd.DataFrame:
     """
-    Devuelve un DataFrame con torre, departamento, saldo_final para el mes y año dados.
+    Carga el DataFrame completo de movimientos para un mes.
+    Retorna DataFrame vacío si no existe.
     """
     supabase = get_supabase()
-    response = supabase.table('saldos_mensuales')\
-        .select('torre, departamento, saldo_final')\
+    response = supabase.table('reportes_mensuales')\
+        .select('datos_json')\
         .eq('anio', anio)\
         .eq('mes', mes)\
         .execute()
     if response.data:
-        df = pd.DataFrame(response.data)
+        df = pd.read_json(response.data[0]['datos_json'], orient='records')
+        # Asegurar tipos numéricos para columnas que no son fecha/operación
+        for col in df.columns:
+            if col not in ['fecha', 'n_operacion']:
+                df[col] = pd.to_numeric(df[col], errors='ignore')
         return df
-    else:
-        return pd.DataFrame(columns=['torre', 'departamento', 'saldo_final'])
+    return pd.DataFrame()
+
+def existe_reporte_mensual(anio: int, mes: str) -> bool:
+    supabase = get_supabase()
+    response = supabase.table('reportes_mensuales')\
+        .select('id')\
+        .eq('anio', anio)\
+        .eq('mes', mes)\
+        .execute()
+    return len(response.data) > 0
 
 # ====================== CONTROL DE CÓDIGOS ======================
 def obtener_ultimo_codigo() -> int:
@@ -504,45 +509,3 @@ def obtener_siguiente_codigo() -> int:
     else:
         supabase.table('control_codigos').insert({'ultimo_codigo': 1}).execute()
         return 1
-# ====================== REPORTES MENSUALES ======================
-def guardar_reporte_mensual(anio: int, mes: str, df: pd.DataFrame) -> None:
-    """
-    Guarda el DataFrame completo de movimientos en la tabla reportes_mensuales.
-    """
-    supabase = get_supabase()
-    # Convertir el DataFrame a JSON (orient='records')
-    datos_json = df.to_json(orient='records', date_format='iso')
-    # Insertar o actualizar (usar upsert basado en la restricción UNIQUE)
-    supabase.table('reportes_mensuales').upsert(
-        {'anio': anio, 'mes': mes, 'datos_json': datos_json},
-        on_conflict='anio, mes'
-    ).execute()
-
-def leer_reporte_mensual(anio: int, mes: str) -> pd.DataFrame:
-    """
-    Carga el DataFrame completo de movimientos para un mes.
-    Retorna DataFrame vacío si no existe.
-    """
-    supabase = get_supabase()
-    response = supabase.table('reportes_mensuales')\
-        .select('datos_json')\
-        .eq('anio', anio)\
-        .eq('mes', mes)\
-        .execute()
-    if response.data:
-        df = pd.read_json(response.data[0]['datos_json'], orient='records')
-        # Convertir columnas numéricas a float si es necesario
-        for col in df.columns:
-            if col not in ['fecha', 'n_operacion']:
-                df[col] = pd.to_numeric(df[col], errors='ignore')
-        return df
-    return pd.DataFrame()
-
-def existe_reporte_mensual(anio: int, mes: str) -> bool:
-    supabase = get_supabase()
-    response = supabase.table('reportes_mensuales')\
-        .select('id')\
-        .eq('anio', anio)\
-        .eq('mes', mes)\
-        .execute()
-    return len(response.data) > 0
