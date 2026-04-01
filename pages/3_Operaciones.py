@@ -111,18 +111,18 @@ with tab1:
                             st.warning("No se identificaron columnas de deuda. Se usará 0.")
                             deuda_df = pd.DataFrame(columns=['torre', 'departamento', 'deuda_inicial'])
                 else:
+                    # Leer saldos del mes anterior desde saldos_mensuales
                     mes_anterior, anio_anterior = obtener_mes_anterior(mes, anio)
-                    df_reporte_anterior = gsheets.leer_reporte_mensual(anio_anterior, mes_anterior)
-                    if df_reporte_anterior.empty:
-                        st.error(f"❌ No se puede generar {mes} {anio} porque no existe el reporte de {mes_anterior} {anio_anterior}.\n\n"
+                    saldos_anteriores = gsheets.leer_saldos_mensuales(anio_anterior, mes_anterior)
+                    if saldos_anteriores.empty:
+                        st.error(f"❌ No se puede generar {mes} {anio} porque no existen saldos guardados para {mes_anterior} {anio_anterior}.\n\n"
                                  f"Por favor, genera primero el reporte del mes anterior.")
                         st.stop()
                     else:
-                        # Obtener último saldo por departamento (más rápido)
-                        df_reporte_anterior['saldo_clean'] = df_reporte_anterior['saldo'].apply(limpiar_numero_general)
-                        ultimo_saldo = df_reporte_anterior.groupby(['torre', 'departamento'])['saldo_clean'].last().reset_index()
-                        deuda_df = ultimo_saldo.rename(columns={'saldo_clean': 'deuda_inicial'})
-                        st.info(f"Deuda inicial obtenida del reporte guardado de {mes_anterior} {anio_anterior}.")
+                        deuda_df = saldos_anteriores[['torre', 'departamento', 'saldo_final']].rename(
+                            columns={'saldo_final': 'deuda_inicial'}
+                        )
+                        st.info(f"Deuda inicial obtenida de los saldos guardados de {mes_anterior} {anio_anterior}.")
 
                 # ========== PROGRAMACIÓN ==========
                 prog_df = gsheets.leer_programacion(mes, anio)
@@ -190,7 +190,7 @@ with tab1:
                         pagos_por_departamento[key] = []
                     pagos_por_departamento[key].append(pago)
 
-                # ========== CONSTRUIR MOVIMIENTOS (mucho más rápido) ==========
+                # ========== CONSTRUIR MOVIMIENTOS ==========
                 movimientos = []
                 for _, row in base.iterrows():
                     torre = row['torre']
@@ -205,10 +205,7 @@ with tab1:
                     otros = row['otros']
                     total_cargos = deuda + mantenimiento + amort + med + otros
 
-                    # Obtener pagos de este departamento (si existen)
                     pagos_dpto = pagos_por_departamento.get((torre, dpto), [])
-                    # Ya están ordenados por fecha (porque pagos_df se ordenó antes)
-                    # Pero si no están ordenados, podemos ordenarlos aquí
                     pagos_dpto.sort(key=lambda x: x['fecha'] if pd.notna(x['fecha']) else datetime.min)
 
                     # Movimiento de cargo
@@ -260,6 +257,21 @@ with tab1:
                         })
 
                 df_mov = pd.DataFrame(movimientos)
+
+                # ========== GUARDAR AGREGADOS EN SALDOS_MENSUALES (ANTES DE FORMATEAR) ==========
+                agregados = df_mov.groupby(['torre', 'departamento']).agg({
+                    'deuda_inicial': 'first',
+                    'mantenimiento': 'first',
+                    'amortizacion': 'first',
+                    'medidor': 'first',
+                    'otros': 'first',
+                    'total_pagado': 'sum',
+                    'saldo': 'last'
+                }).reset_index()
+                agregados.rename(columns={'saldo': 'saldo_final'}, inplace=True)
+                agregados['anio'] = anio
+                agregados['mes'] = mes
+                gsheets.guardar_saldos_mensuales(agregados)
 
                 # ========== FORMATEAR NÚMEROS PARA MOSTRAR ==========
                 def fmt_num(val):
@@ -337,7 +349,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '                 <tr>\n'
+                    html += '                  <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -346,21 +358,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '                 </tr>\n'
+                    html += '                  </tr>\n'
 
-                html += '                 <tr>\n'
+                html += '                  <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '                 </tr>\n'
+                html += '                  </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '                 <tr>\n'
+                    html += '                  <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '                 </tr>\n'
+                    html += '                  </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
