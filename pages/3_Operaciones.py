@@ -31,25 +31,15 @@ def obtener_mes_anterior(mes: str, anio: int):
     else:
         return meses[idx - 1], anio
 
-def leer_otros_mes(mes: str, anio: int):
-    nombre_hoja = f"Otros {mes} {anio}"
-    df_otros = gsheets.leer_hoja_otros(nombre_hoja)
-    if df_otros.empty:
-        return pd.DataFrame(columns=['torre', 'departamento', 'otros'])
-
-    df_otros.columns = df_otros.columns.str.strip().str.lower()
-    conceptos = ['cuota_extraordinarias', 'alquiler_parrilla', 'garantia', 'sala_zoom', 'alquiler_sillas', 'tuberias']
-    for c in conceptos:
-        if c not in df_otros.columns:
-            df_otros[c] = 0
-    for c in conceptos:
-        df_otros[c] = pd.to_numeric(df_otros[c], errors='coerce').fillna(0)
-    df_otros['otros'] = df_otros[conceptos].sum(axis=1)
-
-    df_otros['torre'] = pd.to_numeric(df_otros['torre'], errors='coerce')
-    df_otros['departamento'] = pd.to_numeric(df_otros['departamento'], errors='coerce')
-    df_otros = df_otros.dropna(subset=['torre', 'departamento'])
-    return df_otros[['torre', 'departamento', 'otros']].copy()
+def limpiar_numero_general(x):
+    if pd.isna(x):
+        return 0.0
+    s = str(x).strip()
+    s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
+    try:
+        return float(s)
+    except:
+        return 0.0
 
 # ========== CREAR PESTAÑAS ==========
 tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
@@ -123,16 +113,7 @@ with tab1:
                                  f"Por favor, genera primero el reporte del mes anterior.")
                         st.stop()
                     else:
-                        def limpiar_numero(x):
-                            if pd.isna(x):
-                                return 0.0
-                            s = str(x).strip()
-                            s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
-                            try:
-                                return float(s)
-                            except:
-                                return 0.0
-                        df_reporte_anterior['saldo_clean'] = df_reporte_anterior['saldo'].apply(limpiar_numero)
+                        df_reporte_anterior['saldo_clean'] = df_reporte_anterior['saldo'].apply(limpiar_numero_general)
                         ultimo_saldo = df_reporte_anterior.groupby(['torre', 'departamento'])['saldo_clean'].last().reset_index()
                         deuda_df = ultimo_saldo.rename(columns={'saldo_clean': 'deuda_inicial'})
                         st.info(f"Deuda inicial obtenida del reporte guardado de {mes_anterior} {anio_anterior}.")
@@ -143,20 +124,7 @@ with tab1:
                     st.warning(f"No se encontró programación para {mes} {anio}. Mantenimiento = 0.")
                     prog_df = pd.DataFrame(columns=['torre', 'departamento', 'Mantenimiento'])
                 else:
-                    if 'Mantenimiento' not in prog_df.columns:
-                        col_mant = None
-                        for col in prog_df.columns:
-                            if 'total' in col.lower() or 'mantenimiento' in col.lower() or 'cuota' in col.lower():
-                                col_mant = col
-                                break
-                        if col_mant:
-                            prog_df.rename(columns={col_mant: 'Mantenimiento'}, inplace=True)
-                        else:
-                            prog_df['Mantenimiento'] = 0
                     prog_df = prog_df[['torre', 'departamento', 'Mantenimiento']].copy()
-                    for col in ['torre', 'departamento', 'Mantenimiento']:
-                        if col in prog_df.columns:
-                            prog_df[col] = pd.to_numeric(prog_df[col], errors='coerce')
                     prog_df['Mantenimiento'] = prog_df['Mantenimiento'].fillna(0)
 
                 # ========== AMORTIZACIÓN ==========
@@ -165,9 +133,6 @@ with tab1:
                     st.warning(f"No se encontró amortización para {mes} {anio}. Amortización = 0.")
                     amort_df = pd.DataFrame(columns=['torre', 'departamento', 'amortizacion'])
                 else:
-                    for col in ['torre', 'departamento', 'amortizacion']:
-                        if col in amort_df.columns:
-                            amort_df[col] = pd.to_numeric(amort_df[col], errors='coerce')
                     amort_df = amort_df[['torre', 'departamento', 'amortizacion']].copy()
                     amort_df['amortizacion'] = amort_df['amortizacion'].fillna(0)
 
@@ -177,19 +142,17 @@ with tab1:
                     st.warning(f"No se encontraron medidores para {mes} {anio}. Medidor = 0.")
                     med_df = pd.DataFrame(columns=['torre', 'departamento', 'monto'])
                 else:
-                    for col in ['torre', 'departamento', 'monto']:
-                        if col in med_df.columns:
-                            med_df[col] = pd.to_numeric(med_df[col], errors='coerce')
                     med_df = med_df[['torre', 'departamento', 'monto']].copy()
                     med_df['monto'] = med_df['monto'].fillna(0)
 
                 # ========== OTROS ==========
-                otros_df = leer_otros_mes(mes, anio)
+                otros_df = gsheets.leer_otros_mes(mes, anio)
                 if otros_df.empty:
                     st.warning(f"No se encontraron otros ingresos para {mes} {anio}. Otros = 0.")
                     otros_df = pd.DataFrame(columns=['torre', 'departamento', 'otros'])
                 else:
-                    otros_df['otros'] = pd.to_numeric(otros_df['otros'], errors='coerce').fillna(0)
+                    otros_df = otros_df[['torre', 'departamento', 'otros']].copy()
+                    otros_df['otros'] = otros_df['otros'].fillna(0)
 
                 # ========== PAGOS ==========
                 pagos_df = gsheets.leer_pagos_mes(mes, anio)
@@ -198,16 +161,12 @@ with tab1:
                     pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                                      'mantenimiento', 'amortizacion', 'medidor'])
                 else:
-                    columnas_numericas = ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']
-                    for col in columnas_numericas:
-                        if col in pagos_df.columns:
-                            pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce').fillna(0)
-                        else:
+                    # Asegurar que todas las columnas numéricas existan
+                    for col in ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
+                        if col not in pagos_df.columns:
                             pagos_df[col] = 0
-                    if 'ingresos' not in pagos_df.columns:
-                        pagos_df['ingresos'] = 0
-                    pagos_df = pagos_df[['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
-                                         'mantenimiento', 'amortizacion', 'medidor']].copy()
+                        else:
+                            pagos_df[col] = pd.to_numeric(pagos_df[col], errors='coerce').fillna(0)
                     pagos_df = pagos_df.sort_values('fecha')
 
                 # ========== UNIR TABLAS ==========
@@ -312,7 +271,7 @@ with tab1:
                 df_final = df_final.reset_index(drop=True)
                 df_final.insert(0, '#', range(1, len(df_final)+1))
 
-                # ========== GUARDAR REPORTE COMPLETO (SOBRESCRIBIR) ==========
+                # ========== GUARDAR REPORTE COMPLETO ==========
                 gsheets.guardar_reporte_mensual(anio, mes, df_final)
                 st.success(f"✅ Reporte de {mes} {anio} guardado correctamente.")
 
@@ -360,7 +319,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '               <tr>\n'
+                    html += '                <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -369,21 +328,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '               </tr>\n'
+                    html += '                </tr>\n'
 
-                html += '               <tr>\n'
+                html += '                <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '               </tr>\n'
+                html += '                </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '               <tr>\n'
+                    html += '                <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '               </tr>\n'
+                    html += '                </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -460,18 +419,8 @@ with tab2:
         df_resumen = df_resumen.rename(columns={col_mapping[k]: k for k in esenciales})
         df_resumen = df_resumen[esenciales]
 
-        def limpiar_numero(x):
-            if pd.isna(x):
-                return 0.0
-            s = str(x).strip()
-            s = s.replace(',', '').replace(' ', '').replace('S/', '').replace('$', '')
-            try:
-                return float(s)
-            except:
-                return 0.0
-
         for col in ['deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros', 'total_pagado']:
-            df_resumen[col] = df_resumen[col].apply(limpiar_numero)
+            df_resumen[col] = df_resumen[col].apply(limpiar_numero_general)
 
         df_resumen['torre'] = pd.to_numeric(df_resumen['torre'], errors='coerce').fillna(0).astype(int)
         df_resumen['departamento'] = pd.to_numeric(df_resumen['departamento'], errors='coerce').fillna(0).astype(int)
@@ -529,7 +478,6 @@ with tab2:
         total_pag_gral = resumen['total_pagado'].sum()
         total_saldo_gral = resumen['saldo_a_pagar'].sum()
 
-        # Presentación personalizada de los 5 totales sin truncamiento
         st.markdown(
             """
             <style>
@@ -598,7 +546,6 @@ with tab2:
 
         st.markdown("---")
 
-        # Buscador
         busqueda = st.text_input("Buscar por código o nombre", placeholder="Ej. 01101 o nombre")
         if busqueda:
             mask = (resumen_final['CÓDIGO'].astype(str).str.contains(busqueda, case=False, na=False) |
@@ -615,7 +562,6 @@ with tab2:
         }
         st.dataframe(resumen_final, use_container_width=True, height=600, column_config=column_config)
 
-        # Subtotales por torre
         st.subheader("Subtotales por Torre")
         subtotales_num = resumen.groupby('torre').agg({
             'total_programacion': 'sum',
@@ -628,7 +574,6 @@ with tab2:
             subtotales_num[col] = subtotales_num[col].apply(formatear_moneda)
         st.dataframe(subtotales_num, use_container_width=True)
 
-        # Descarga a Excel
         import io
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
