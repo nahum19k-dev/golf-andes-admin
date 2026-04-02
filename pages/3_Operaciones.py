@@ -52,7 +52,7 @@ def ultimo_dia_mes(mes: str, anio: int) -> int:
     return calendar.monthrange(anio, idx)[1]
 
 # ========== CACHÉ PARA PROPIETARIOS ==========
-@st.cache_data(ttl=300)  # 5 minutos de caché
+@st.cache_data(ttl=300)
 def cargar_propietarios():
     return gsheets.leer_propietarios()
 
@@ -170,14 +170,13 @@ with tab1:
                     otros_df = otros_df[['torre', 'departamento', 'otros']].copy()
                     otros_df['otros'] = otros_df['otros'].fillna(0)
 
-                # ========== PAGOS (optimizado) ==========
+                # ========== PAGOS ==========
                 pagos_df = gsheets.leer_pagos_mes(mes, anio)
                 if pagos_df.empty:
                     st.warning(f"No se encontraron pagos para {mes} {anio}.")
                     pagos_df = pd.DataFrame(columns=['fecha', 'torre', 'departamento', 'n_operacion', 'ingresos',
                                                      'mantenimiento', 'amortizacion', 'medidor'])
                 else:
-                    # Asegurar columnas numéricas
                     for col in ['torre', 'departamento', 'ingresos', 'mantenimiento', 'amortizacion', 'medidor']:
                         if col not in pagos_df.columns:
                             pagos_df[col] = 0
@@ -192,7 +191,7 @@ with tab1:
                 base = base.merge(med_df, on=['torre', 'departamento'], how='left').fillna(0)
                 base = base.merge(otros_df, on=['torre', 'departamento'], how='left').fillna(0)
 
-                # ========== OPTIMIZACIÓN: DICCIONARIO DE PAGOS POR DEPARTAMENTO ==========
+                # ========== DICCIONARIO DE PAGOS ==========
                 pagos_por_departamento = {}
                 for _, pago in pagos_df.iterrows():
                     key = (pago['torre'], pago['departamento'])
@@ -268,7 +267,7 @@ with tab1:
 
                 df_mov = pd.DataFrame(movimientos)
 
-                # ========== GUARDAR AGREGADOS EN SALDOS_MENSUALES (ANTES DE FORMATEAR) ==========
+                # ========== GUARDAR AGREGADOS ==========
                 agregados = df_mov.groupby(['torre', 'departamento']).agg({
                     'deuda_inicial': 'first',
                     'mantenimiento': 'first',
@@ -283,7 +282,7 @@ with tab1:
                 agregados['mes'] = mes
                 gsheets.guardar_saldos_mensuales(agregados)
 
-                # ========== FORMATEAR NÚMEROS PARA MOSTRAR ==========
+                # ========== FORMATEAR NÚMEROS ==========
                 def fmt_num(val):
                     try:
                         if pd.isna(val) or val == '':
@@ -311,7 +310,7 @@ with tab1:
                 df_final = df_final.reset_index(drop=True)
                 df_final.insert(0, '#', range(1, len(df_final)+1))
 
-                # ========== GUARDAR REPORTE COMPLETO ==========
+                # ========== GUARDAR REPORTE ==========
                 gsheets.guardar_reporte_mensual(anio, mes, df_final)
                 st.success(f"✅ Reporte de {mes} {anio} guardado correctamente.")
 
@@ -359,7 +358,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '                    <tr>\n'
+                    html += '                     <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -368,21 +367,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '                    </tr>\n'
+                    html += '                     </tr>\n'
 
-                html += '                    <tr>\n'
+                html += '                     <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '                    </tr>\n'
+                html += '                     </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '                    <tr>\n'
+                    html += '                     <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '                    </tr>\n'
+                    html += '                     </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -418,7 +417,6 @@ with tab2:
     else:
         df_resumen = st.session_state.df_final.copy()
 
-        # Limpieza de columnas
         if isinstance(df_resumen.columns, pd.MultiIndex):
             df_resumen.columns = [col[1] if col[1] else col[0] for col in df_resumen.columns]
 
@@ -495,7 +493,6 @@ with tab2:
 
         resumen = resumen.sort_values(['torre', 'saldo_a_pagar'], ascending=[True, False])
 
-        # Formateo de moneda
         def formatear_moneda(valor):
             return f"S/ {valor:,.2f}"
 
@@ -511,7 +508,6 @@ with tab2:
         resumen_final.columns = ['TORRE', 'N°DPTO', 'CÓDIGO', 'DNI', 'APELLIDOS Y NOMBRES',
                                  'TOTAL PROGRAMACIÓN', 'TOTAL DEUDA', 'TOTAL PAGADO', 'SALDO A PAGAR']
 
-        # ---------- TOTALES GENERALES ----------
         total_deuda_inicial_gral = resumen['deuda_inicial'].sum()
         total_prog_gral = resumen['total_programacion'].sum()
         total_deuda_gral = resumen['total_deuda'].sum()
@@ -631,7 +627,6 @@ with tab2:
 with tab3:
     st.subheader("Generar Reporte de Deudas por Torre")
 
-    # Selectores de mes y año (por defecto el último generado)
     meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
     default_mes_index = meses.index(st.session_state.mes_actual) if st.session_state.mes_actual in meses else 0
@@ -643,7 +638,6 @@ with tab3:
     with col2:
         anio_reporte = st.number_input("Año", min_value=2025, max_value=2035, value=default_anio, step=1, key="anio_reporte_pdf")
 
-    # Botones de descarga
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         generar_pdf = st.button("Generar PDF", type="primary", key="generar_pdf")
@@ -653,25 +647,25 @@ with tab3:
     if generar_pdf or generar_excel:
         with st.spinner("Generando reporte..."):
             try:
-                # 1. Obtener saldos del mes seleccionado
+                # Obtener saldos
                 df_saldos = gsheets.leer_saldos_mensuales(anio_reporte, mes_reporte)
                 if df_saldos.empty:
                     st.warning(f"No hay datos de saldos para {mes_reporte} {anio_reporte}. Primero genera ese mes en la pestaña 'Detalle'.")
                     st.stop()
 
-                # 2. Filtrar solo deudores (saldo_final > 0)
+                # Solo deudores
                 df_deudores = df_saldos[df_saldos['saldo_final'] > 0].copy()
                 if df_deudores.empty:
                     st.info("No hay deudores en el período seleccionado.")
                     st.stop()
 
-                # 3. Obtener datos de propietarios
+                # Propietarios
                 df_prop = cargar_propietarios()
                 if df_prop.empty:
                     st.error("No se pudieron cargar los datos de propietarios.")
                     st.stop()
 
-                # 4. Unir con propietarios para obtener nombres y DNI
+                # Unir
                 df_prop['torre'] = pd.to_numeric(df_prop['torre'], errors='coerce')
                 df_prop['departamento'] = pd.to_numeric(df_prop['dpto'], errors='coerce')
                 df_prop = df_prop[['torre', 'departamento', 'codigo', 'dni', 'nombre']].dropna()
@@ -684,33 +678,27 @@ with tab3:
                 df_final = df_deudores.merge(df_prop, on=['torre', 'departamento'], how='left')
                 df_final['nombre'] = df_final['nombre'].fillna("SIN REGISTRAR")
                 df_final['dni'] = df_final['dni'].fillna("")
-
-                # 5. Ordenar por torre y departamento
                 df_final = df_final.sort_values(['torre', 'departamento'])
 
-                # 6. Obtener la fecha del último pago en el mes (si existe)
+                # Fecha del último pago
                 pagos_mes = gsheets.leer_pagos_mes(mes_reporte, anio_reporte)
                 if not pagos_mes.empty and 'fecha' in pagos_mes.columns:
                     ultima_fecha = pagos_mes['fecha'].max()
                     if pd.notna(ultima_fecha):
                         fecha_reporte = ultima_fecha
                     else:
-                        # Si no hay fechas válidas, usar último día del mes
                         dia = ultimo_dia_mes(mes_reporte, anio_reporte)
                         fecha_reporte = datetime(anio_reporte, meses.index(mes_reporte)+1, dia)
                 else:
-                    # Si no hay pagos, usar último día del mes
                     dia = ultimo_dia_mes(mes_reporte, anio_reporte)
                     fecha_reporte = datetime(anio_reporte, meses.index(mes_reporte)+1, dia)
-                
-                # Formatear la fecha para el encabezado
+
                 fecha_corte = fecha_reporte.strftime("%d de %B del %Y").upper()
-                # Reemplazar el nombre del mes en español (por si acaso)
                 meses_esp = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
                              "JULIO","AGOSTO","SETIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"]
                 fecha_corte = fecha_corte.replace(fecha_reporte.strftime("%B").upper(), meses_esp[meses.index(mes_reporte)])
 
-                # ----- PDF -----
+                # ========== PDF ==========
                 if generar_pdf:
                     class PDF(FPDF):
                         def header(self):
@@ -770,7 +758,6 @@ with tab3:
                     pdf_output = io.BytesIO()
                     pdf.output(pdf_output)
                     pdf_data = pdf_output.getvalue()
-
                     nombre_archivo_pdf = f"DEUDAS_TORRE_{fecha_reporte.strftime('%d_%m_%Y')}.pdf"
                     st.download_button(
                         label="📥 Descargar PDF",
@@ -779,7 +766,7 @@ with tab3:
                         mime="application/pdf"
                     )
 
-                # ----- EXCEL -----
+                # ========== EXCEL ==========
                 if generar_excel:
                     output_excel = io.BytesIO()
                     with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
@@ -794,22 +781,24 @@ with tab3:
                         df_resumen = pd.DataFrame(resumen_general)
                         df_resumen["TOTAL DEUDA"] = df_resumen["TOTAL DEUDA"].apply(lambda x: f"S/ {x:,.2f}")
                         df_resumen.to_excel(writer, sheet_name="RESUMEN", index=False)
-                        
+
                         # Una hoja por torre
                         for torre in sorted(df_final['torre'].unique()):
                             df_torre = df_final[df_final['torre'] == torre].copy()
                             df_torre = df_torre.reset_index(drop=True)
+                            # Crear columna ITEM
                             df_torre.insert(0, "ITEM", range(1, len(df_torre)+1))
-                            df_torre = df_torre[["ITEM", "TORRE", "departamento", "dni", "nombre", "saldo_final"]]
+                            # Seleccionar y renombrar columnas
+                            df_torre = df_torre[["ITEM", "torre", "departamento", "dni", "nombre", "saldo_final"]]
                             df_torre.columns = ["ITEM", "TORRE", "N°DPTO", "DNI", "APELLIDOS Y NOMBRES", "DEUDA (S/)"]
                             df_torre["DEUDA (S/)"] = df_torre["DEUDA (S/)"].apply(lambda x: f"S/ {x:,.2f}")
                             sheet_name = f"Torre_{torre}"
                             df_torre.to_excel(writer, sheet_name=sheet_name, index=False)
-                        
+
                         # Hoja con la fecha de corte
                         df_fecha = pd.DataFrame({"FECHA DE CORTE": [fecha_corte]})
                         df_fecha.to_excel(writer, sheet_name="INFORMACION", index=False)
-                    
+
                     excel_data = output_excel.getvalue()
                     nombre_archivo_excel = f"DEUDAS_TORRE_{fecha_reporte.strftime('%d_%m_%Y')}.xlsx"
                     st.download_button(
