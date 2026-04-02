@@ -57,7 +57,7 @@ def cargar_propietarios():
     return gsheets.leer_propietarios()
 
 # ========== CREAR PESTAÑAS ==========
-tab1, tab2, tab3 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres", "📄 Reporte de Deudas (PDF)"])
+tab1, tab2, tab3 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres", "📄 Reporte de Deudas (PDF/Excel)"])
 
 # ====================== TAB 1: DETALLE POR DEPARTAMENTO ======================
 with tab1:
@@ -627,7 +627,7 @@ with tab2:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# ====================== TAB 3: REPORTE DE DEUDAS (PDF) ======================
+# ====================== TAB 3: REPORTE DE DEUDAS (PDF/Excel) ======================
 with tab3:
     st.subheader("Generar Reporte de Deudas por Torre")
 
@@ -639,13 +639,18 @@ with tab3:
 
     col1, col2 = st.columns(2)
     with col1:
-        # Asignamos una clave única para evitar duplicados con el selectbox de la pestaña 1
         mes_reporte = st.selectbox("Mes", meses, index=default_mes_index, key="mes_reporte_pdf")
     with col2:
-        # Clave única para el number_input
         anio_reporte = st.number_input("Año", min_value=2025, max_value=2035, value=default_anio, step=1, key="anio_reporte_pdf")
 
-    if st.button("Generar PDF", type="primary", key="generar_pdf"):
+    # Botones de descarga
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        generar_pdf = st.button("Generar PDF", type="primary", key="generar_pdf")
+    with col_btn2:
+        generar_excel = st.button("Generar Excel", type="secondary", key="generar_excel")
+
+    if generar_pdf or generar_excel:
         with st.spinner("Generando reporte..."):
             try:
                 # 1. Obtener saldos del mes seleccionado
@@ -677,94 +682,142 @@ with tab3:
                 df_deudores['departamento'] = df_deudores['departamento'].astype(int)
 
                 df_final = df_deudores.merge(df_prop, on=['torre', 'departamento'], how='left')
-                # Si falta algún nombre, usar placeholder
                 df_final['nombre'] = df_final['nombre'].fillna("SIN REGISTRAR")
                 df_final['dni'] = df_final['dni'].fillna("")
 
                 # 5. Ordenar por torre y departamento
                 df_final = df_final.sort_values(['torre', 'departamento'])
 
-                # 6. Calcular el último día del mes para el encabezado
-                dia = ultimo_dia_mes(mes_reporte, anio_reporte)
-                fecha_corte = f"{dia} DE {mes_reporte.upper()} DEL {anio_reporte}"
+                # 6. Obtener la fecha del último pago en el mes (si existe)
+                pagos_mes = gsheets.leer_pagos_mes(mes_reporte, anio_reporte)
+                if not pagos_mes.empty and 'fecha' in pagos_mes.columns:
+                    ultima_fecha = pagos_mes['fecha'].max()
+                    if pd.notna(ultima_fecha):
+                        fecha_reporte = ultima_fecha
+                    else:
+                        # Si no hay fechas válidas, usar último día del mes
+                        dia = ultimo_dia_mes(mes_reporte, anio_reporte)
+                        fecha_reporte = datetime(anio_reporte, meses.index(mes_reporte)+1, dia)
+                else:
+                    # Si no hay pagos, usar último día del mes
+                    dia = ultimo_dia_mes(mes_reporte, anio_reporte)
+                    fecha_reporte = datetime(anio_reporte, meses.index(mes_reporte)+1, dia)
+                
+                # Formatear la fecha para el encabezado
+                fecha_corte = fecha_reporte.strftime("%d de %B del %Y").upper()
+                # Reemplazar el nombre del mes en español (por si acaso)
+                meses_esp = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
+                             "JULIO","AGOSTO","SETIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"]
+                fecha_corte = fecha_corte.replace(fecha_reporte.strftime("%B").upper(), meses_esp[meses.index(mes_reporte)])
 
-                # 7. Crear PDF con fpdf2
-                class PDF(FPDF):
-                    def header(self):
-                        self.set_font('Helvetica', 'B', 12)
-                        self.cell(0, 6, "JUNTA DE PROPIETARIOS DEL CONJUNTO RESIDENCIAL GOLF LOS ANDES", ln=True, align='C')
-                        self.set_font('Helvetica', 'B', 11)
-                        self.cell(0, 6, f"RELACION DE DEUDAS AL {fecha_corte}", ln=True, align='C')
-                        self.ln(8)
+                # ----- PDF -----
+                if generar_pdf:
+                    class PDF(FPDF):
+                        def header(self):
+                            self.set_font('Helvetica', 'B', 12)
+                            self.cell(0, 6, "JUNTA DE PROPIETARIOS DEL CONJUNTO RESIDENCIAL GOLF LOS ANDES", ln=True, align='C')
+                            self.set_font('Helvetica', 'B', 11)
+                            self.cell(0, 6, f"RELACION DE DEUDAS AL {fecha_corte}", ln=True, align='C')
+                            self.ln(8)
 
-                pdf = PDF('P', 'mm', 'A4')
-                pdf.set_auto_page_break(auto=True, margin=15)
-                pdf.set_font('Helvetica', '', 10)
+                    pdf = PDF('P', 'mm', 'A4')
+                    pdf.set_auto_page_break(auto=True, margin=15)
+                    pdf.set_font('Helvetica', '', 10)
 
-                # Agrupar por torre
-                total_general = 0.0
-                for torre in sorted(df_final['torre'].unique()):
-                    df_torre = df_final[df_final['torre'] == torre].copy()
-                    df_torre = df_torre.reset_index(drop=True)
-                    df_torre['item'] = df_torre.index + 1
+                    total_general = 0.0
+                    for torre in sorted(df_final['torre'].unique()):
+                        df_torre = df_final[df_final['torre'] == torre].copy()
+                        df_torre = df_torre.reset_index(drop=True)
+                        df_torre['item'] = df_torre.index + 1
 
-                    pdf.add_page()
-                    # Título de la torre
-                    pdf.set_font('Helvetica', 'B', 12)
-                    pdf.cell(0, 8, f"TORRE N° {torre}", ln=True, align='L')
-                    pdf.set_font('Helvetica', '', 9)
-                    pdf.ln(4)
+                        pdf.add_page()
+                        pdf.set_font('Helvetica', 'B', 12)
+                        pdf.cell(0, 8, f"TORRE N° {torre}", ln=True, align='L')
+                        pdf.set_font('Helvetica', '', 9)
+                        pdf.ln(4)
 
-                    # Cabecera de tabla
-                    cabeceras = ["ITEM", "TORRE", "N°DPTO", "DNI", "APELLIDOS Y NOMBRES", "DEUDA (S/)"]
-                    col_widths = [12, 15, 20, 30, 70, 30]
-                    pdf.set_font('Helvetica', 'B', 9)
-                    for i, cab in enumerate(cabeceras):
-                        pdf.cell(col_widths[i], 7, cab, border=1, align='C')
-                    pdf.ln()
-
-                    # Filas de datos
-                    pdf.set_font('Helvetica', '', 9)
-                    subtotal_torre = 0.0
-                    for _, row in df_torre.iterrows():
-                        pdf.cell(col_widths[0], 6, str(row['item']), border=1, align='R')
-                        pdf.cell(col_widths[1], 6, str(int(row['torre'])), border=1, align='C')
-                        pdf.cell(col_widths[2], 6, str(int(row['departamento'])), border=1, align='C')
-                        pdf.cell(col_widths[3], 6, str(row['dni']), border=1, align='L')
-                        # Recortar nombre si es muy largo
-                        nombre = row['nombre'][:40] if len(row['nombre']) > 40 else row['nombre']
-                        pdf.cell(col_widths[4], 6, nombre, border=1, align='L')
-                        deuda = row['saldo_final']
-                        subtotal_torre += deuda
-                        pdf.cell(col_widths[5], 6, f"{deuda:,.2f}".replace(',', '.'), border=1, align='R')
+                        cabeceras = ["ITEM", "TORRE", "N°DPTO", "DNI", "APELLIDOS Y NOMBRES", "DEUDA (S/)"]
+                        col_widths = [12, 15, 20, 30, 70, 30]
+                        pdf.set_font('Helvetica', 'B', 9)
+                        for i, cab in enumerate(cabeceras):
+                            pdf.cell(col_widths[i], 7, cab, border=1, align='C')
                         pdf.ln()
 
-                    # Subtítulo de subtotal torre
-                    pdf.set_font('Helvetica', 'B', 9)
-                    pdf.cell(sum(col_widths) - col_widths[-1], 6, f"SUB-TOTAL DEUDA TORRE N°{torre}", border=0, align='R')
-                    pdf.cell(col_widths[-1], 6, f"{subtotal_torre:,.2f}".replace(',', '.'), border=1, align='R')
-                    pdf.ln(8)
+                        pdf.set_font('Helvetica', '', 9)
+                        subtotal_torre = 0.0
+                        for _, row in df_torre.iterrows():
+                            pdf.cell(col_widths[0], 6, str(row['item']), border=1, align='R')
+                            pdf.cell(col_widths[1], 6, str(int(row['torre'])), border=1, align='C')
+                            pdf.cell(col_widths[2], 6, str(int(row['departamento'])), border=1, align='C')
+                            pdf.cell(col_widths[3], 6, str(row['dni']), border=1, align='L')
+                            nombre = row['nombre'][:40] if len(row['nombre']) > 40 else row['nombre']
+                            pdf.cell(col_widths[4], 6, nombre, border=1, align='L')
+                            deuda = row['saldo_final']
+                            subtotal_torre += deuda
+                            pdf.cell(col_widths[5], 6, f"{deuda:,.2f}".replace(',', '.'), border=1, align='R')
+                            pdf.ln()
 
-                    total_general += subtotal_torre
+                        pdf.set_font('Helvetica', 'B', 9)
+                        pdf.cell(sum(col_widths) - col_widths[-1], 6, f"SUB-TOTAL DEUDA TORRE N°{torre}", border=0, align='R')
+                        pdf.cell(col_widths[-1], 6, f"{subtotal_torre:,.2f}".replace(',', '.'), border=1, align='R')
+                        pdf.ln(8)
+                        total_general += subtotal_torre
 
-                # Total general al final (última página)
-                pdf.add_page()
-                pdf.set_font('Helvetica', 'B', 10)
-                pdf.cell(0, 10, f"TOTAL GENERAL DE TODAS LAS TORRES: S/ {total_general:,.2f}".replace(',', '.'), ln=True, align='R')
+                    pdf.add_page()
+                    pdf.set_font('Helvetica', 'B', 10)
+                    pdf.cell(0, 10, f"TOTAL GENERAL DE TODAS LAS TORRES: S/ {total_general:,.2f}".replace(',', '.'), ln=True, align='R')
 
-                # Guardar PDF en memoria
-                pdf_output = io.BytesIO()
-                pdf.output(pdf_output)
-                pdf_data = pdf_output.getvalue()
+                    pdf_output = io.BytesIO()
+                    pdf.output(pdf_output)
+                    pdf_data = pdf_output.getvalue()
 
-                # Nombre del archivo
-                nombre_archivo = f"DEUDAS_TORRE_{dia:02d}_{mes_reporte.upper()}_{anio_reporte}.pdf"
-                st.download_button(
-                    label="📥 Descargar PDF",
-                    data=pdf_data,
-                    file_name=nombre_archivo,
-                    mime="application/pdf"
-                )
+                    nombre_archivo_pdf = f"DEUDAS_TORRE_{fecha_reporte.strftime('%d_%m_%Y')}.pdf"
+                    st.download_button(
+                        label="📥 Descargar PDF",
+                        data=pdf_data,
+                        file_name=nombre_archivo_pdf,
+                        mime="application/pdf"
+                    )
+
+                # ----- EXCEL -----
+                if generar_excel:
+                    output_excel = io.BytesIO()
+                    with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
+                        # Hoja resumen general
+                        resumen_general = []
+                        total_gral = 0.0
+                        for torre in sorted(df_final['torre'].unique()):
+                            df_torre = df_final[df_final['torre'] == torre]
+                            subtotal = df_torre['saldo_final'].sum()
+                            total_gral += subtotal
+                            resumen_general.append({"TORRE": torre, "TOTAL DEUDA": subtotal})
+                        df_resumen = pd.DataFrame(resumen_general)
+                        df_resumen["TOTAL DEUDA"] = df_resumen["TOTAL DEUDA"].apply(lambda x: f"S/ {x:,.2f}")
+                        df_resumen.to_excel(writer, sheet_name="RESUMEN", index=False)
+                        
+                        # Una hoja por torre
+                        for torre in sorted(df_final['torre'].unique()):
+                            df_torre = df_final[df_final['torre'] == torre].copy()
+                            df_torre = df_torre.reset_index(drop=True)
+                            df_torre.insert(0, "ITEM", range(1, len(df_torre)+1))
+                            df_torre = df_torre[["ITEM", "TORRE", "departamento", "dni", "nombre", "saldo_final"]]
+                            df_torre.columns = ["ITEM", "TORRE", "N°DPTO", "DNI", "APELLIDOS Y NOMBRES", "DEUDA (S/)"]
+                            df_torre["DEUDA (S/)"] = df_torre["DEUDA (S/)"].apply(lambda x: f"S/ {x:,.2f}")
+                            sheet_name = f"Torre_{torre}"
+                            df_torre.to_excel(writer, sheet_name=sheet_name, index=False)
+                        
+                        # Hoja con la fecha de corte
+                        df_fecha = pd.DataFrame({"FECHA DE CORTE": [fecha_corte]})
+                        df_fecha.to_excel(writer, sheet_name="INFORMACION", index=False)
+                    
+                    excel_data = output_excel.getvalue()
+                    nombre_archivo_excel = f"DEUDAS_TORRE_{fecha_reporte.strftime('%d_%m_%Y')}.xlsx"
+                    st.download_button(
+                        label="📥 Descargar Excel",
+                        data=excel_data,
+                        file_name=nombre_archivo_excel,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
             except Exception as e:
-                st.error(f"Error al generar el PDF: {str(e)}")
+                st.error(f"Error al generar el reporte: {str(e)}")
