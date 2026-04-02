@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import supabase_client as gsheets
 from datetime import datetime, timedelta
+import calendar
+from fpdf import FPDF
+import io
 
 st.set_page_config(page_title="Operaciones", page_icon="📊", layout="wide")
 
@@ -41,13 +44,20 @@ def limpiar_numero_general(x):
     except:
         return 0.0
 
+def ultimo_dia_mes(mes: str, anio: int) -> int:
+    """Devuelve el último día del mes (1-31)."""
+    meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+             "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
+    idx = meses.index(mes) + 1
+    return calendar.monthrange(anio, idx)[1]
+
 # ========== CACHÉ PARA PROPIETARIOS ==========
 @st.cache_data(ttl=300)  # 5 minutos de caché
 def cargar_propietarios():
     return gsheets.leer_propietarios()
 
 # ========== CREAR PESTAÑAS ==========
-tab1, tab2 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres"])
+tab1, tab2, tab3 = st.tabs(["📋 Detalle por Departamento", "🏢 Resumen por Torres", "📄 Reporte de Deudas (PDF)"])
 
 # ====================== TAB 1: DETALLE POR DEPARTAMENTO ======================
 with tab1:
@@ -349,7 +359,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '                  <tr>\n'
+                    html += '                   <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -358,21 +368,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '                  </tr>\n'
+                    html += '                   </tr>\n'
 
-                html += '                  <tr>\n'
+                html += '                   <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '                  </tr>\n'
+                html += '                   </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '                  <tr>\n'
+                    html += '                   <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '                  </tr>\n'
+                    html += '                   </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -616,3 +626,143 @@ with tab2:
             file_name=f"Resumen_Torres_{st.session_state.mes_actual}_{st.session_state.anio_actual}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+# ====================== TAB 3: REPORTE DE DEUDAS (PDF) ======================
+with tab3:
+    st.subheader("Generar Reporte de Deudas por Torre")
+
+    # Selectores de mes y año (por defecto el último generado)
+    meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+             "Julio","Agosto","Setiembre","Octubre","Noviembre","Diciembre"]
+    default_mes_index = meses.index(st.session_state.mes_actual) if st.session_state.mes_actual in meses else 0
+    default_anio = st.session_state.anio_actual if st.session_state.anio_actual else 2026
+
+    col1, col2 = st.columns(2)
+    with col1:
+        mes_reporte = st.selectbox("Mes", meses, index=default_mes_index)
+    with col2:
+        anio_reporte = st.number_input("Año", min_value=2025, max_value=2035, value=default_anio, step=1)
+
+    if st.button("Generar PDF", type="primary"):
+        with st.spinner("Generando reporte..."):
+            try:
+                # 1. Obtener saldos del mes seleccionado
+                df_saldos = gsheets.leer_saldos_mensuales(anio_reporte, mes_reporte)
+                if df_saldos.empty:
+                    st.warning(f"No hay datos de saldos para {mes_reporte} {anio_reporte}. Primero genera ese mes en la pestaña 'Detalle'.")
+                    st.stop()
+
+                # 2. Filtrar solo deudores (saldo_final > 0)
+                df_deudores = df_saldos[df_saldos['saldo_final'] > 0].copy()
+                if df_deudores.empty:
+                    st.info("No hay deudores en el período seleccionado.")
+                    st.stop()
+
+                # 3. Obtener datos de propietarios
+                df_prop = cargar_propietarios()
+                if df_prop.empty:
+                    st.error("No se pudieron cargar los datos de propietarios.")
+                    st.stop()
+
+                # 4. Unir con propietarios para obtener nombres y DNI
+                df_prop['torre'] = pd.to_numeric(df_prop['torre'], errors='coerce')
+                df_prop['departamento'] = pd.to_numeric(df_prop['dpto'], errors='coerce')
+                df_prop = df_prop[['torre', 'departamento', 'codigo', 'dni', 'nombre']].dropna()
+                df_prop['torre'] = df_prop['torre'].astype(int)
+                df_prop['departamento'] = df_prop['departamento'].astype(int)
+
+                df_deudores['torre'] = df_deudores['torre'].astype(int)
+                df_deudores['departamento'] = df_deudores['departamento'].astype(int)
+
+                df_final = df_deudores.merge(df_prop, on=['torre', 'departamento'], how='left')
+                # Si falta algún nombre, usar placeholder
+                df_final['nombre'] = df_final['nombre'].fillna("SIN REGISTRAR")
+                df_final['dni'] = df_final['dni'].fillna("")
+
+                # 5. Ordenar por torre y departamento
+                df_final = df_final.sort_values(['torre', 'departamento'])
+
+                # 6. Calcular el último día del mes para el encabezado
+                dia = ultimo_dia_mes(mes_reporte, anio_reporte)
+                fecha_corte = f"{dia} DE {mes_reporte.upper()} DEL {anio_reporte}"
+
+                # 7. Crear PDF con fpdf2
+                class PDF(FPDF):
+                    def header(self):
+                        self.set_font('Helvetica', 'B', 12)
+                        self.cell(0, 6, "JUNTA DE PROPIETARIOS DEL CONJUNTO RESIDENCIAL GOLF LOS ANDES", ln=True, align='C')
+                        self.set_font('Helvetica', 'B', 11)
+                        self.cell(0, 6, f"RELACION DE DEUDAS AL {fecha_corte}", ln=True, align='C')
+                        self.ln(8)
+
+                pdf = PDF('P', 'mm', 'A4')
+                pdf.set_auto_page_break(auto=True, margin=15)
+                pdf.set_font('Helvetica', '', 10)
+
+                # Agrupar por torre
+                total_general = 0.0
+                for torre in sorted(df_final['torre'].unique()):
+                    df_torre = df_final[df_final['torre'] == torre].copy()
+                    df_torre = df_torre.reset_index(drop=True)
+                    df_torre['item'] = df_torre.index + 1
+
+                    pdf.add_page()
+                    # Título de la torre
+                    pdf.set_font('Helvetica', 'B', 12)
+                    pdf.cell(0, 8, f"TORRE N° {torre}", ln=True, align='L')
+                    pdf.set_font('Helvetica', '', 9)
+                    pdf.ln(4)
+
+                    # Cabecera de tabla
+                    cabeceras = ["ITEM", "TORRE", "N°DPTO", "DNI", "APELLIDOS Y NOMBRES", "DEUDA (S/)"]
+                    col_widths = [12, 15, 20, 30, 70, 30]
+                    pdf.set_font('Helvetica', 'B', 9)
+                    for i, cab in enumerate(cabeceras):
+                        pdf.cell(col_widths[i], 7, cab, border=1, align='C')
+                    pdf.ln()
+
+                    # Filas de datos
+                    pdf.set_font('Helvetica', '', 9)
+                    subtotal_torre = 0.0
+                    for _, row in df_torre.iterrows():
+                        pdf.cell(col_widths[0], 6, str(row['item']), border=1, align='R')
+                        pdf.cell(col_widths[1], 6, str(int(row['torre'])), border=1, align='C')
+                        pdf.cell(col_widths[2], 6, str(int(row['departamento'])), border=1, align='C')
+                        pdf.cell(col_widths[3], 6, str(row['dni']), border=1, align='L')
+                        # Recortar nombre si es muy largo
+                        nombre = row['nombre'][:40] if len(row['nombre']) > 40 else row['nombre']
+                        pdf.cell(col_widths[4], 6, nombre, border=1, align='L')
+                        deuda = row['saldo_final']
+                        subtotal_torre += deuda
+                        pdf.cell(col_widths[5], 6, f"{deuda:,.2f}".replace(',', '.'), border=1, align='R')
+                        pdf.ln()
+
+                    # Subtítulo de subtotal torre
+                    pdf.set_font('Helvetica', 'B', 9)
+                    pdf.cell(sum(col_widths) - col_widths[-1], 6, f"SUB-TOTAL DEUDA TORRE N°{torre}", border=0, align='R')
+                    pdf.cell(col_widths[-1], 6, f"{subtotal_torre:,.2f}".replace(',', '.'), border=1, align='R')
+                    pdf.ln(8)
+
+                    total_general += subtotal_torre
+
+                # Total general al final (última página)
+                pdf.add_page()
+                pdf.set_font('Helvetica', 'B', 10)
+                pdf.cell(0, 10, f"TOTAL GENERAL DE TODAS LAS TORRES: S/ {total_general:,.2f}".replace(',', '.'), ln=True, align='R')
+
+                # Guardar PDF en memoria
+                pdf_output = io.BytesIO()
+                pdf.output(pdf_output)
+                pdf_data = pdf_output.getvalue()
+
+                # Nombre del archivo
+                nombre_archivo = f"DEUDAS_TORRE_{dia:02d}_{mes_reporte.upper()}_{anio_reporte}.pdf"
+                st.download_button(
+                    label="📥 Descargar PDF",
+                    data=pdf_data,
+                    file_name=nombre_archivo,
+                    mime="application/pdf"
+                )
+
+            except Exception as e:
+                st.error(f"Error al generar el PDF: {str(e)}")
