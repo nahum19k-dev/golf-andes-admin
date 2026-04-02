@@ -359,7 +359,7 @@ with tab1:
                     pagos_last = max(pagos_indices)
                     pagos_span = pagos_last - pagos_first + 1
 
-                    html += '                   <tr>\n'
+                    html += '                    <tr>\n'
                     for i in range(prog_first):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
                     html += f'        <th colspan="{prog_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PROGRAMACION</th>\n'
@@ -368,21 +368,21 @@ with tab1:
                     html += f'        <th colspan="{pagos_span}" style="text-align: center; font-weight: bold; background-color: #f0f2f6; border: 1px solid #ddd; padding: 4px 2px;">PAGOS</th>\n'
                     for i in range(pagos_last+1, len(col_names)):
                         html += '        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6;"></th>\n'
-                    html += '                   </tr>\n'
+                    html += '                    </tr>\n'
 
-                html += '                   <tr>\n'
+                html += '                    <tr>\n'
                 for col in col_names:
                     html += f'        <th style="border: 1px solid #ddd; padding: 4px 2px; background-color: #f0f2f6; text-align: left;">{col}</th>\n'
-                html += '                   </tr>\n'
+                html += '                    </tr>\n'
                 html += '</thead>\n<tbody>\n'
 
                 for _, row in df_final.iterrows():
-                    html += '                   <tr>\n'
+                    html += '                    <tr>\n'
                     for col in col_names:
                         val = row[col]
                         align = 'right' if col in grupo_prog + grupo_pagos else 'left'
                         html += f'        <td style="border: 1px solid #ddd; padding: 4px 2px; text-align: {align};">{val}</td>\n'
-                    html += '                   </tr>\n'
+                    html += '                    </tr>\n'
                 html += '</tbody>\n</table>\n</div>'
 
                 st.markdown(html, unsafe_allow_html=True)
@@ -639,11 +639,13 @@ with tab3:
 
     col1, col2 = st.columns(2)
     with col1:
-        mes_reporte = st.selectbox("Mes", meses, index=default_mes_index)
+        # Asignamos una clave única para evitar duplicados con el selectbox de la pestaña 1
+        mes_reporte = st.selectbox("Mes", meses, index=default_mes_index, key="mes_reporte_pdf")
     with col2:
-        anio_reporte = st.number_input("Año", min_value=2025, max_value=2035, value=default_anio, step=1)
+        # Clave única para el number_input
+        anio_reporte = st.number_input("Año", min_value=2025, max_value=2035, value=default_anio, step=1, key="anio_reporte_pdf")
 
-    if st.button("Generar PDF", type="primary"):
+    if st.button("Generar PDF", type="primary", key="generar_pdf"):
         with st.spinner("Generando reporte..."):
             try:
                 # 1. Obtener saldos del mes seleccionado
