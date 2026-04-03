@@ -25,13 +25,15 @@ def obtener_datos_mes(anio, mes):
     if not df_prop.empty:
         df_prop['torre'] = pd.to_numeric(df_prop['torre'], errors='coerce')
         df_prop['departamento'] = pd.to_numeric(df_prop['dpto'], errors='coerce')
-        df_prop = df_prop[['torre', 'departamento', 'nombre']].dropna()
+        df_prop = df_prop[['torre', 'departamento', 'dni', 'nombre']].dropna()
         df_prop['torre'] = df_prop['torre'].astype(int)
         df_prop['departamento'] = df_prop['departamento'].astype(int)
         df_saldos = df_saldos.merge(df_prop, on=['torre', 'departamento'], how='left')
         df_saldos['nombre'] = df_saldos['nombre'].fillna("SIN REGISTRAR")
+        df_saldos['dni'] = df_saldos['dni'].fillna("")
     else:
         df_saldos['nombre'] = "SIN REGISTRAR"
+        df_saldos['dni'] = ""
     return df_saldos, df_saldos[df_saldos['saldo_final'] > 0].copy()
 
 # ========== SELECTOR DE MES Y AÑO ==========
@@ -43,14 +45,12 @@ with col1:
 with col2:
     anio_sel = st.number_input("Año", min_value=2025, max_value=2035, value=2026, step=1)
 
-# Botón para cargar
 if st.button("Actualizar Dashboard", type="primary", use_container_width=True):
     with st.spinner("Cargando datos..."):
         df_total, df_deudores = obtener_datos_mes(anio_sel, mes_sel)
         if df_total is None or df_total.empty:
             st.warning(f"No hay datos de saldos para {mes_sel} {anio_sel}. Primero genera ese mes en la pestaña 'Detalle' de Operaciones.")
         else:
-            # Guardar en session_state para evitar recargas en cada tab
             st.session_state['df_total'] = df_total
             st.session_state['df_deudores'] = df_deudores
             st.session_state['datos_cargados'] = True
@@ -73,7 +73,6 @@ if st.session_state.get('datos_cargados', False):
     deuda_inicial_total = df_total['deuda_inicial'].sum()
     tasa_morosidad = (total_saldo_positivo / (deuda_inicial_total + total_programacion)) * 100 if (deuda_inicial_total + total_programacion) > 0 else 0
 
-    # CSS para tarjetas
     st.markdown("""
     <style>
     .kpi-card {
@@ -135,8 +134,8 @@ if st.session_state.get('datos_cargados', False):
 
     st.markdown("---")
 
-    # ========== PESTAÑAS INTERNAS PARA GRÁFICOS ==========
-    tab_resumen, tab_torres, tab_deudores, tab_evolucion = st.tabs(
+    # ========== PESTAÑAS INTERNAS ==========
+    tab_resumen, tab_torres, tab_top, tab_evolucion = st.tabs(
         ["📈 Resumen General", "🏢 Deuda por Torre", "👥 Top Deudores", "📅 Evolución Mensual"]
     )
 
@@ -194,34 +193,51 @@ if st.session_state.get('datos_cargados', False):
         tabla_torre['Saldo a Pagar (S/)'] = tabla_torre['Saldo a Pagar (S/)'].apply(lambda x: f"S/ {x:,.2f}")
         st.dataframe(tabla_torre, use_container_width=True)
 
-    with tab_deudores:
+    with tab_top:
         st.subheader("Top 10 Deudores")
-        top10 = df_deudores.nlargest(10, 'saldo_final')[['nombre', 'saldo_final', 'torre', 'departamento']]
-        top10['nombre_corto'] = top10['nombre'].apply(lambda x: x[:25] + '...' if len(x) > 25 else x)
-        top10['label'] = top10['nombre_corto'] + f" (T{top10['torre']}-{top10['departamento']})"
-        fig_top = px.bar(top10, x='saldo_final', y='label', orientation='h',
-                         title='Top 10 Deudores',
-                         labels={'saldo_final': 'Saldo (S/)', 'label': 'Propietario'},
-                         color='saldo_final', color_continuous_scale='Reds')
-        fig_top.update_layout(height=500, margin=dict(l=0, r=0))
+        # Mostrar tabla con Torre, N°DPTO, DNI, Monto
+        top10 = df_deudores.nlargest(10, 'saldo_final')[['torre', 'departamento', 'dni', 'saldo_final']].copy()
+        top10.columns = ['Torre', 'N°DPTO', 'DNI', 'Monto (S/)']
+        top10['Monto (S/)'] = top10['Monto (S/)'].apply(lambda x: f"S/ {x:,.2f}")
+        st.dataframe(top10, use_container_width=True, hide_index=True)
+
+        # Gráfico de barras opcional (pero se mantiene por claridad)
+        fig_top = px.bar(top10.head(10), x='Torre', y='Monto (S/)', 
+                         text='Monto (S/)', title="Top 10 Deudores (Montos)",
+                         color='Monto (S/)', color_continuous_scale='Reds')
         st.plotly_chart(fig_top, use_container_width=True)
 
-        # Mostrar tabla completa de deudores (opcional)
-        with st.expander("Ver todos los deudores"):
-            todos = df_deudores[['torre', 'departamento', 'nombre', 'saldo_final']].copy()
-            todos.columns = ['Torre', 'N°DPTO', 'Propietario', 'Saldo Pendiente']
-            todos['Saldo Pendiente'] = todos['Saldo Pendiente'].apply(lambda x: f"S/ {x:,.2f}")
-            st.dataframe(todos, use_container_width=True)
+        # Evolución del número de deudores (mensual)
+        st.subheader("Evolución del Número de Deudores")
+        # Obtener datos históricos de los últimos 6 meses
+        evol_deudores = []
+        for i in range(5, -1, -1):
+            nuevo_mes_num = meses.index(mes_sel) + 1 - i
+            nuevo_anio = anio_sel
+            if nuevo_mes_num <= 0:
+                nuevo_mes_num += 12
+                nuevo_anio -= 1
+            if nuevo_anio < 2025:
+                continue
+            mes_nombre = meses[nuevo_mes_num-1]
+            df_hist, _ = obtener_datos_mes(nuevo_anio, mes_nombre)
+            if df_hist is not None and not df_hist.empty:
+                num = len(df_hist[df_hist['saldo_final'] > 0])
+                evol_deudores.append({'Mes': f"{mes_nombre[:3]}-{nuevo_anio}", 'N° Deudores': num})
+        if evol_deudores:
+            df_evol = pd.DataFrame(evol_deudores)
+            fig_line = px.line(df_evol, x='Mes', y='N° Deudores', 
+                               title='Evolución Mensual de Deudores',
+                               markers=True, line_shape='linear')
+            st.plotly_chart(fig_line, use_container_width=True)
+        else:
+            st.info("No hay datos suficientes para mostrar evolución.")
 
     with tab_evolucion:
-        st.subheader("Evolución de Indicadores (últimos 6 meses)")
-        # Necesitamos datos históricos de saldos_mensuales
-        # Vamos a consultar los últimos 6 meses disponibles
-        meses_num = list(range(anio_sel-1, anio_sel+1))
-        # Obtener meses previos
-        evol_data = []
+        st.subheader("Saldo a Pagar por Mes (Miles de Soles)")
+        # Obtener datos históricos de los últimos 6 meses
+        evol_saldo = []
         for i in range(5, -1, -1):
-            # Calcular mes y año correspondientes
             nuevo_mes_num = meses.index(mes_sel) + 1 - i
             nuevo_anio = anio_sel
             if nuevo_mes_num <= 0:
@@ -233,27 +249,16 @@ if st.session_state.get('datos_cargados', False):
             df_hist, _ = obtener_datos_mes(nuevo_anio, mes_nombre)
             if df_hist is not None and not df_hist.empty:
                 saldo_pos = df_hist[df_hist['saldo_final'] > 0]['saldo_final'].sum()
-                pagado = df_hist['total_pagado'].sum()
-                deudores = len(df_hist[df_hist['saldo_final'] > 0])
-                evol_data.append({
-                    'Mes': f"{mes_nombre[:3]}-{nuevo_anio}",
-                    'Saldo a Pagar': saldo_pos,
-                    'Total Pagado': pagado,
-                    'N° Deudores': deudores
-                })
-        if evol_data:
-            df_evol = pd.DataFrame(evol_data)
-            fig_line = px.line(df_evol, x='Mes', y=['Saldo a Pagar', 'Total Pagado'], 
-                               title='Evolución de Saldo y Pagos',
-                               labels={'value': 'Soles', 'variable': 'Indicador'},
-                               markers=True)
-            st.plotly_chart(fig_line, use_container_width=True)
-
-            fig_deudores = px.bar(df_evol, x='Mes', y='N° Deudores', 
-                                  title='Evolución del Número de Deudores',
-                                  text_auto=True, color_discrete_sequence=['#2c5a82'])
-            st.plotly_chart(fig_deudores, use_container_width=True)
+                evol_saldo.append({'Mes': f"{mes_nombre[:3]}-{nuevo_anio}", 'Saldo a Pagar (S/)': saldo_pos})
+        if evol_saldo:
+            df_saldo = pd.DataFrame(evol_saldo)
+            fig_saldo = px.bar(df_saldo, x='Mes', y='Saldo a Pagar (S/)', 
+                               title='Saldo a Pagar por Mes',
+                               text_auto='.2f', color='Saldo a Pagar (S/)',
+                               color_continuous_scale='Blues')
+            st.plotly_chart(fig_saldo, use_container_width=True)
         else:
-            st.info("No hay datos suficientes para mostrar evolución (genera meses anteriores).")
+            st.info("No hay datos suficientes para mostrar evolución.")
+
 else:
     st.info("Selecciona un mes y año y haz clic en 'Actualizar Dashboard' para comenzar.")
