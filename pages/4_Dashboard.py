@@ -21,6 +21,12 @@ def obtener_datos_mes(anio, mes):
     df_saldos = gsheets.leer_saldos_mensuales(anio, mes)
     if df_saldos.empty:
         return None, None
+    # Asegurar columnas necesarias
+    for col in ['torre', 'departamento', 'saldo_final', 'total_pagado', 
+                'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros']:
+        if col not in df_saldos.columns:
+            df_saldos[col] = 0
+
     df_prop = cargar_propietarios()
     if not df_prop.empty:
         df_prop['torre'] = pd.to_numeric(df_prop['torre'], errors='coerce')
@@ -28,13 +34,21 @@ def obtener_datos_mes(anio, mes):
         df_prop = df_prop[['torre', 'departamento', 'dni', 'nombre']].dropna()
         df_prop['torre'] = df_prop['torre'].astype(int)
         df_prop['departamento'] = df_prop['departamento'].astype(int)
+        # Unir con saldos
         df_saldos = df_saldos.merge(df_prop, on=['torre', 'departamento'], how='left')
         df_saldos['nombre'] = df_saldos['nombre'].fillna("SIN REGISTRAR")
         df_saldos['dni'] = df_saldos['dni'].fillna("")
     else:
         df_saldos['nombre'] = "SIN REGISTRAR"
         df_saldos['dni'] = ""
-    return df_saldos, df_saldos[df_saldos['saldo_final'] > 0].copy()
+
+    # Asegurar que todas las columnas numéricas sean float
+    num_cols = ['saldo_final', 'total_pagado', 'deuda_inicial', 'mantenimiento', 'amortizacion', 'medidor', 'otros']
+    for col in num_cols:
+        df_saldos[col] = pd.to_numeric(df_saldos[col], errors='coerce').fillna(0)
+
+    df_deudores = df_saldos[df_saldos['saldo_final'] > 0].copy()
+    return df_saldos, df_deudores
 
 # ========== SELECTOR DE MES Y AÑO ==========
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
@@ -140,7 +154,6 @@ if st.session_state.get('datos_cargados', False):
     )
 
     with tab_resumen:
-        # Gráfico de composición de la deuda (Waterfall)
         st.subheader("Análisis de Deuda: Inicial + Programación - Pagos = Saldo Final")
         data_waterfall = {
             'Concepto': ['Deuda Inicial', 'Programación', 'Pagos', 'Saldo Final (Deudores)'],
@@ -164,7 +177,6 @@ if st.session_state.get('datos_cargados', False):
         fig_wf.update_layout(height=500, margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_wf, use_container_width=True)
 
-        # Gráfico de distribución de deudores por rango de deuda
         bins = [0, 500, 1000, 5000, 10000, 50000, float('inf')]
         labels = ['< S/500', 'S/500-1000', 'S/1000-5000', 'S/5000-10000', 'S/10000-50000', '> S/50000']
         df_deudores['rango'] = pd.cut(df_deudores['saldo_final'], bins=bins, labels=labels, right=False)
@@ -186,7 +198,6 @@ if st.session_state.get('datos_cargados', False):
         fig_bar.update_layout(height=500)
         st.plotly_chart(fig_bar, use_container_width=True)
 
-        # Tabla de detalle por torre
         st.subheader("Detalle por Torre")
         tabla_torre = deuda_torre.copy()
         tabla_torre.columns = ['Torre', 'Saldo a Pagar (S/)']
@@ -195,21 +206,22 @@ if st.session_state.get('datos_cargados', False):
 
     with tab_top:
         st.subheader("Top 10 Deudores")
-        # Mostrar tabla con Torre, N°DPTO, DNI, Monto
+        # Verificar que la columna 'dni' existe
+        if 'dni' not in df_deudores.columns:
+            df_deudores['dni'] = ""
         top10 = df_deudores.nlargest(10, 'saldo_final')[['torre', 'departamento', 'dni', 'saldo_final']].copy()
         top10.columns = ['Torre', 'N°DPTO', 'DNI', 'Monto (S/)']
         top10['Monto (S/)'] = top10['Monto (S/)'].apply(lambda x: f"S/ {x:,.2f}")
         st.dataframe(top10, use_container_width=True, hide_index=True)
 
-        # Gráfico de barras opcional (pero se mantiene por claridad)
-        fig_top = px.bar(top10.head(10), x='Torre', y='Monto (S/)', 
+        # Gráfico de barras de los top 10
+        fig_top = px.bar(top10, x='Torre', y='Monto (S/)', 
                          text='Monto (S/)', title="Top 10 Deudores (Montos)",
                          color='Monto (S/)', color_continuous_scale='Reds')
         st.plotly_chart(fig_top, use_container_width=True)
 
-        # Evolución del número de deudores (mensual)
+        # Evolución del número de deudores
         st.subheader("Evolución del Número de Deudores")
-        # Obtener datos históricos de los últimos 6 meses
         evol_deudores = []
         for i in range(5, -1, -1):
             nuevo_mes_num = meses.index(mes_sel) + 1 - i
@@ -234,8 +246,7 @@ if st.session_state.get('datos_cargados', False):
             st.info("No hay datos suficientes para mostrar evolución.")
 
     with tab_evolucion:
-        st.subheader("Saldo a Pagar por Mes (Miles de Soles)")
-        # Obtener datos históricos de los últimos 6 meses
+        st.subheader("Saldo a Pagar por Mes (Soles)")
         evol_saldo = []
         for i in range(5, -1, -1):
             nuevo_mes_num = meses.index(mes_sel) + 1 - i
